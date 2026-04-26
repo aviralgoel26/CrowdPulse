@@ -1,7 +1,7 @@
 package com.crowdpulse.backend.service.impl;
 
 import com.crowdpulse.backend.service.MetricsService;
-
+import com.crowdpulse.backend.dto.CrowdStats;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import com.crowdpulse.backend.repository.PlaceRepository;
@@ -9,7 +9,6 @@ import com.crowdpulse.backend.model.Place;
 import com.crowdpulse.backend.dto.RecommendationResponse;
 import com.crowdpulse.backend.dto.VibeResponse;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
 
@@ -46,19 +45,14 @@ public void updateHeartbeat(Long placeId, String userId, long timestamp) {
             String.valueOf(System.currentTimeMillis())
     );
 
-    redisTemplate.expire(key, java.time.Duration.ofSeconds(60));
+    
 }
 
 
 // Active users are those who have sent a heartbeat within the last 60 seconds
    @Override
 public int getActiveUsers(Long placeId) {
-
-    String key = "place:" + placeId + ":users";
-
-    Long size = redisTemplate.opsForHash().size(key);
-
-    return size != null ? size.intValue() : 0;
+    return (int) getCrowdStats(placeId).getEffectiveUsers();
 }
 
 
@@ -66,7 +60,8 @@ public int getActiveUsers(Long placeId) {
    @Override
 public int getVibeScore(Long placeId) {
 
-    int activeUsers = getActiveUsers(placeId);
+   CrowdStats stats = getCrowdStats(placeId);
+double effectiveUsers = stats.getEffectiveUsers();
 
     Place place = placeRepository.findById(placeId)
             .orElseThrow(() -> new RuntimeException("Place not found"));
@@ -75,7 +70,7 @@ public int getVibeScore(Long placeId) {
 
     if (capacity == 0) return 10;
 
-    double density = (double) activeUsers / capacity;
+    double density = effectiveUsers / capacity;
 
     int vibe = (int) Math.ceil((1 - density) * 10);
 
@@ -162,5 +157,64 @@ public RecommendationResponse getRecommendation(Long placeId) {
     }
 
     return new RecommendationResponse(vibe, label, trend, recommendation);
+}
+
+
+public CrowdStats getCrowdStats(Long placeId) {
+
+    // 1. Redis key
+    String key = "place:" + placeId + ":users";
+
+    // 2. Get all users from Redis
+    Map<Object, Object> users = redisTemplate.opsForHash().entries(key);
+
+    long now = System.currentTimeMillis();
+
+    // 3. Get place details
+    Place place = placeRepository.findById(placeId)
+            .orElseThrow(() -> new RuntimeException("Place not found"));
+
+    int active = 0;
+    int shadow = 0;
+
+    long activeThreshold = 60_000; // 60 sec
+
+    long shadowThreshold;
+
+    // 🔥 4. Decide shadow duration based on place type
+    switch (place.getType()) {
+
+        case QUEUE:
+            shadowThreshold = 60 * 60 * 1000; // 60 min
+            break;
+
+        case TIMED:
+            shadowThreshold = 30 * 60 * 1000; // 30 min
+            break;
+
+        default: // VIBE
+            shadowThreshold = 10 * 60 * 1000; // 10 min
+    }
+
+    // 5. Loop through users
+    for (Object value : users.values()) {
+
+        long lastSeen = Long.parseLong(value.toString());
+        long diff = now - lastSeen;
+
+        if (diff < activeThreshold) {
+            active++;
+        } else if (diff < shadowThreshold) {
+            shadow++;
+        }
+        // else ignore (user left)
+    }
+
+    // 6. Calculate effective users
+    double effective = active + (shadow * 0.5);
+
+double scaled = (effective * place.getScalingFactor()) + place.getAdminOffset();
+
+return new CrowdStats(active, shadow, scaled);
 }
 }

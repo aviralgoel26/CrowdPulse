@@ -35,6 +35,10 @@ public class Place {
     private int radius;
     private int capacity;
 
+
+    private double scalingFactor = 1.2; // default
+    private int adminOffset = 0;
+
     // Getters and Setters
     public int getCapacity() {
     return capacity;
@@ -42,6 +46,20 @@ public class Place {
     public void setCapacity(int capacity) {
     this.capacity = capacity;
     }
+
+    public PlaceType getType() {
+    return type;
+}
+public void setType(PlaceType type) {
+    this.type = type;
+}
+public double getScalingFactor() {
+    return scalingFactor;
+}
+
+public int getAdminOffset() {
+    return adminOffset;
+}
 
     
     @Column(name = "is_active")
