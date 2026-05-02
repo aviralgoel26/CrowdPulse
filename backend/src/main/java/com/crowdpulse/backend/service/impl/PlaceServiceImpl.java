@@ -1,9 +1,13 @@
 package com.crowdpulse.backend.service.impl;
 
 import com.crowdpulse.backend.model.Place;
+import com.crowdpulse.backend.model.PlaceDetails;
 import com.crowdpulse.backend.model.PlaceType;
+import com.crowdpulse.backend.repository.PlaceDetailsRepository;
 import com.crowdpulse.backend.repository.PlaceRepository;
 import com.crowdpulse.backend.service.PlaceService;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -33,4 +37,13 @@ public class PlaceServiceImpl implements PlaceService {
         return placeRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Place not found"));
     }
+
+    @Autowired
+private PlaceDetailsRepository placeDetailsRepository;
+
+@Override
+public PlaceDetails getPlaceDetails(Long placeId) {
+    return placeDetailsRepository.findByPlaceId(placeId);
+}
+
 }

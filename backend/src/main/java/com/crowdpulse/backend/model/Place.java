@@ -1,5 +1,5 @@
 package com.crowdpulse.backend.model;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -67,4 +67,8 @@ public int getAdminOffset() {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @OneToOne(mappedBy = "place", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+@JsonIgnore
+private PlaceDetails placeDetails;
 }

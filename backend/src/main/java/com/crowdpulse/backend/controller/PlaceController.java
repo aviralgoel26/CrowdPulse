@@ -1,8 +1,11 @@
 package com.crowdpulse.backend.controller;
 
 import com.crowdpulse.backend.model.Place;
+import com.crowdpulse.backend.model.PlaceDetails;
 import com.crowdpulse.backend.model.PlaceType;
 import com.crowdpulse.backend.service.PlaceService;
+
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,4 +39,10 @@ public class PlaceController {
     public List<Place> getPlacesByType(@PathVariable PlaceType type) {
         return placeService.getPlacesByType(type);
     }
+
+    @GetMapping("/{id}/details")
+public ResponseEntity<PlaceDetails> getPlaceDetails(@PathVariable Long id) {
+    return ResponseEntity.ok(placeService.getPlaceDetails(id));
+}
+
 }

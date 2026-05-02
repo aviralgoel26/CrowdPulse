@@ -11,6 +11,13 @@ export const getPlaces = async () => {
   }
 };
 
+
+// ✅ Get places Details
+export const getPlaceDetails = async (id) => {
+  const res = await fetch(`${BASE_URL}/places/${id}/details`);
+  return res.json();
+};
+
 // ✅ Get vibe
 export const getVibe = async (placeId) => {
   try {
@@ -33,11 +40,6 @@ export const getRecommendation = async (placeId) => {
   }
 };
 
-// ✅ Get place details
-export const getPlaceDetails = async (id) => {
-  const res = await fetch(`${BASE_URL}/places/${id}`);
-  return res.json();
-};
 //  ✅ Get trend data
 export const getTrend = async (id) => {
   const res = await fetch(`${BASE_URL}/metrics/trend/${id}`);
