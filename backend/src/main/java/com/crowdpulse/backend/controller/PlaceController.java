@@ -9,6 +9,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/crowdpulse/places")
+@CrossOrigin(origins = "http://localhost:5173")
 public class PlaceController {
 
     private final PlaceService placeService;
