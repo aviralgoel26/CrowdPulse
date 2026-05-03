@@ -2,6 +2,8 @@ import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getPlaceDetails, getVibe, getRecommendation } from "../services/api";
 import LiveIntelligence from "../components/LiveIntelligence";
+import VirtualQueue from "../components/VirtualQueue";
+
 
 export default function PlaceDetail() {
   const { id } = useParams();
@@ -435,15 +437,8 @@ export default function PlaceDetail() {
         {tab === "virtual" && (
           <div className="pb-20">
             <div className="bg-white rounded-2xl p-12 shadow-xl text-center border border-gray-100">
-              <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">Virtual Queue Coming Soon</h3>
-              <p className="text-gray-600 max-w-md mx-auto">
-                We're working on an intelligent virtual queue system to enhance your temple visit experience.
-              </p>
+              
+             <VirtualQueue placeId={id} />
             </div>
           </div>
         )}

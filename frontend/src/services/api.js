@@ -51,3 +51,19 @@ export const getWaitTime = async (id) => {
   const res = await fetch(`${BASE_URL}/queue/wait-time/${id}`);
   return res.json();
 };
+
+
+export const joinQueue = async (placeId, userId) => {
+  const res = await fetch(
+    `${BASE_URL}/queue/join/${placeId}?userId=${userId}`,
+    { method: "POST" }
+  );
+  return res.json();
+};
+
+export const getQueueStatus = async (placeId, userId) => {
+  const res = await fetch(
+    `${BASE_URL}/queue/status/${placeId}?userId=${userId}`
+  );
+  return res.json();
+};
