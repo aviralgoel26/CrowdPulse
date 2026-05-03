@@ -20,8 +20,9 @@ public class QueueController {
     // 🎟️ JOIN QUEUE
     @PostMapping("/join/{placeId}")
     public Map<String, Object> joinQueue(@PathVariable Long placeId,
-                                         @RequestParam String userId) {
-        return queueService.joinQueue(placeId, userId);
+                                         @RequestParam String userId,
+                                        @RequestParam(defaultValue = "1")int groupSize) {
+        return queueService.joinQueue(placeId, userId, groupSize);
     }
 
     // 📊 GET STATUS

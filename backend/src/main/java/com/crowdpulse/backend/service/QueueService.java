@@ -9,7 +9,7 @@ public interface QueueService {
     WaitTimeResponse calculateWaitTime(Long placeId);
 
     // 🔹 New
-    Map<String, Object> joinQueue(Long placeId, String userId);
+    Map<String, Object> joinQueue(Long placeId, String userId, int groupSize);
 
     Map<String, Object> getStatus(Long placeId, String userId);
 }

@@ -36,9 +36,33 @@ public class QueueScheduler {
             Long size = redisTemplate.opsForList().size(key);
 
             if (size != null && size > 0) {
-                String servedUser = redisTemplate.opsForList().leftPop(key);
+               int peopleToServe = 3; // temporary
+
+StringBuilder servedLog = new StringBuilder();
+
+while (peopleToServe > 0) {
+
+    String entry = redisTemplate.opsForList().index(key, 0);
+
+    if (entry == null) break;
+
+    String[] parts = entry.split(":");
+    int groupSize = Integer.parseInt(parts[1]);
+
+    if (groupSize <= peopleToServe) {
+
+        redisTemplate.opsForList().leftPop(key);
+
+        servedLog.append(entry).append(" ");
+
+        peopleToServe -= groupSize;
+
+    } else {
+        break;
+    }
+}
                 
-                System.out.println("🚶 Served user: " + servedUser + " from " + key);
+                System.out.println("🚶 Served user: " + servedLog + " from " + key);
 
                 // 3. Extract placeId from the key (e.g., "queue:place:123" -> "123")
                 String[] parts = key.split(":");

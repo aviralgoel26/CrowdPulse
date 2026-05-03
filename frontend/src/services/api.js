@@ -53,9 +53,9 @@ export const getWaitTime = async (id) => {
 };
 
 
-export const joinQueue = async (placeId, userId) => {
+export const joinQueue = async (placeId, userId, groupSize) => {
   const res = await fetch(
-    `${BASE_URL}/queue/join/${placeId}?userId=${userId}`,
+    `${BASE_URL}/queue/join/${placeId}?userId=${userId}&groupSize=${groupSize}`,
     { method: "POST" }
   );
   return res.json();
