@@ -5,22 +5,28 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.crowdpulse.backend.service.CommunityService;
+import com.crowdpulse.backend.model.CommunityUpdate;
+
+import java.util.List;
 import java.util.Set;
 
 @Component
 public class QueueScheduler {
 
     private final StringRedisTemplate redisTemplate;
-    private final SimpMessagingTemplate messagingTemplate; // 1. Added template
+    private final SimpMessagingTemplate messagingTemplate;
+    private final CommunityService communityService;
 
-    // 2. Updated constructor for Injection
-    public QueueScheduler(StringRedisTemplate redisTemplate, 
-                          SimpMessagingTemplate messagingTemplate) {
+    public QueueScheduler(StringRedisTemplate redisTemplate,
+                          SimpMessagingTemplate messagingTemplate,
+                          CommunityService communityService) {
         this.redisTemplate = redisTemplate;
         this.messagingTemplate = messagingTemplate;
+        this.communityService = communityService;
     }
 
-    @Scheduled(fixedRate = 10000)
+    @Scheduled(fixedRate = 10000) // runs every 10 sec
     public void processQueue() {
 
         System.out.println("⏱️ Scheduler running...");
@@ -33,50 +39,121 @@ public class QueueScheduler {
         }
 
         for (String key : keys) {
-            Long size = redisTemplate.opsForList().size(key);
 
-            if (size != null && size > 0) {
-               int peopleToServe = 3; // temporary
+            // ==============================
+            // 🧹 CLEANUP EXPIRED USERS
+            // ==============================
+            List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
 
-StringBuilder servedLog = new StringBuilder();
+            if (queue != null) {
+                for (String entry : queue) {
 
-while (peopleToServe > 0) {
+                    String[] parts = entry.split(":");
 
-    String entry = redisTemplate.opsForList().index(key, 0);
+                    if (parts.length < 3) continue;
 
-    if (entry == null) break;
+                    long lastSeen = Long.parseLong(parts[2]);
+                    long now = System.currentTimeMillis();
 
-    String[] parts = entry.split(":");
-    int groupSize = Integer.parseInt(parts[1]);
+                    long diffMinutes = (now - lastSeen) / (1000 * 60);
 
-    if (groupSize <= peopleToServe) {
-
-        redisTemplate.opsForList().leftPop(key);
-
-        servedLog.append(entry).append(" ");
-
-        peopleToServe -= groupSize;
-
-    } else {
-        break;
-    }
-}
-                
-                System.out.println("🚶 Served user: " + servedLog + " from " + key);
-
-                // 3. Extract placeId from the key (e.g., "queue:place:123" -> "123")
-                String[] parts = key.split(":");
-                if (parts.length >= 3) {
-                    String placeId = parts[2];
-
-                    // 4. Broadcast the update to the specific topic
-                    messagingTemplate.convertAndSend(
-                        "/topic/queue/" + placeId,
-                        "update"
-                    );
-                    System.out.println("🚀 Broadcast sent to /topic/queue/" + placeId);
+                    // Remove users inactive > 60 mins
+                    if (diffMinutes > 60) {
+                        redisTemplate.opsForList().remove(key, 1, entry);
+                        System.out.println("🧹 Removed expired user: " + entry);
+                    }
                 }
             }
+
+            // ==============================
+            // 📊 CHECK QUEUE SIZE
+            // ==============================
+            Long size = redisTemplate.opsForList().size(key);
+
+            if (size == null || size == 0) {
+                continue;
+            }
+
+            // ==============================
+            // 📊 GET PLACE ID
+            // ==============================
+            String[] keyParts = key.split(":");
+            Long placeId = Long.parseLong(keyParts[2]);
+
+            // ==============================
+            // 📊 COMMUNITY DATA
+            // ==============================
+            CommunityUpdate update = communityService.getLatestUpdate(placeId);
+
+            // 🚦 PAUSE CHECK
+            if (update != null && "PAUSED".equalsIgnoreCase(update.getQueueStatus())) {
+                System.out.println("⛔ Queue paused for place: " + placeId);
+                continue;
+            }
+
+            // ==============================
+            // ⚡ DYNAMIC THROUGHPUT
+            // ==============================
+            int peopleToServe;
+
+            if (update != null && update.getThroughputPerMin() != null) {
+
+                // Convert per minute → per 10 sec
+                peopleToServe = update.getThroughputPerMin() / 6;
+
+                if (peopleToServe <= 0) {
+                    peopleToServe = 1; // safeguard
+                }
+
+            } else {
+                peopleToServe = 3; // fallback
+            }
+
+            // ==============================
+            // 🚶 SERVE USERS
+            // ==============================
+            int servedUsers = 0;
+            int servedPeople = 0;
+
+            while (peopleToServe > 0) {
+
+                String entry = redisTemplate.opsForList().index(key, 0);
+
+                if (entry == null) break;
+
+                String[] entryParts = entry.split(":");
+
+                if (entryParts.length < 3) break;
+
+                String userId = entryParts[0];
+                int groupSize = Integer.parseInt(entryParts[1]);
+
+                if (groupSize <= peopleToServe) {
+
+                    redisTemplate.opsForList().leftPop(key);
+
+                    peopleToServe -= groupSize;
+                    servedUsers++;
+                    servedPeople += groupSize;
+
+                    System.out.println("🚶 Served user: " + userId + " (" + groupSize + ")");
+
+                } else {
+                    break;
+                }
+            }
+
+            System.out.println("📊 Total served: " + servedUsers + " users (" + servedPeople + " people)");
+
+            // ==============================
+            // 📡 WEBSOCKET BROADCAST
+            // ==============================
+            messagingTemplate.convertAndSend(
+                    "/topic/queue/" + placeId,
+                    "update"
+            );
+
+            System.out.println("🚀 Broadcast sent to /topic/queue/" + placeId);
         }
     }
 }

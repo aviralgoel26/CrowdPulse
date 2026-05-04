@@ -6,6 +6,8 @@ import com.crowdpulse.backend.service.QueueService;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import com.crowdpulse.backend.model.CommunityUpdate;
+import com.crowdpulse.backend.service.CommunityService;
 
 import java.util.List;
 import java.util.Map;
@@ -15,11 +17,14 @@ public class QueueServiceImpl implements QueueService {
 
     private final PlaceRepository placeRepository;
     private final StringRedisTemplate redisTemplate;
+    private final CommunityService communityService;
 
     public QueueServiceImpl(PlaceRepository placeRepository,
-                            StringRedisTemplate redisTemplate) {
+                            StringRedisTemplate redisTemplate,
+                            CommunityService communityService) {
         this.placeRepository = placeRepository;
         this.redisTemplate = redisTemplate;
+        this.communityService= communityService;
     }
 
     // 🔑 Redis Queue Key
@@ -41,8 +46,9 @@ public Map<String, Object> joinQueue(Long placeId, String userId, int groupSize)
         return Map.of("message", "Already in queue");
     }
 
-    // Store as "userId:groupSize"
-    String value = userId + ":" + groupSize;
+    long now = System.currentTimeMillis();
+
+String value = userId + ":" + groupSize + ":" + now;
 
     redisTemplate.opsForList().rightPush(key, value);
 
@@ -78,13 +84,21 @@ public Map<String, Object> getStatus(Long placeId, String userId) {
 
         String queuedUser = parts[0];
         int groupSize = Integer.parseInt(parts[1]);
+        long lastSeen = Long.parseLong(parts[2]);
 
         if (queuedUser.equals(userId)) {
             position = i + 1;
             break;
         }
 
-        peopleAhead += groupSize;
+        long now = System.currentTimeMillis();
+
+// 🔥 SHADOW LOGIC
+long diffMinutes = (now - lastSeen) / (1000 * 60);
+
+if (diffMinutes < 30) {
+    peopleAhead += groupSize; // ACTIVE + SHADOW
+}
     }
 
     if (position == 0) {
@@ -100,32 +114,46 @@ public Map<String, Object> getStatus(Long placeId, String userId) {
     // ⏱️ WAIT TIME CALCULATION
     // ==============================
     @Override
-    public WaitTimeResponse calculateWaitTime(Long placeId) {
+public WaitTimeResponse calculateWaitTime(Long placeId) {
 
-        String key = getQueueKey(placeId);
+    String key = getQueueKey(placeId);
 
-        List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
+    // 🔹 Redis queue data
+    List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
 
-int totalPeople = 0;
+    int redisPeople = 0;
 
-if (queue != null) {
-    for (String entry : queue) {
-        String[] parts = entry.split(":");
-        int groupSize = Integer.parseInt(parts[1]);
-        totalPeople += groupSize;
+    if (queue != null) {
+        for (String entry : queue) {
+            String[] parts = entry.split(":");
+            int groupSize = Integer.parseInt(parts[1]);
+            redisPeople += groupSize;
+        }
     }
+
+    // 🔹 Community data
+    CommunityUpdate update = communityService.getLatestUpdate(placeId);
+
+    int communityPeople = (update != null && update.getReportedQueueLength() != null)
+            ? update.getReportedQueueLength()
+            : 0;
+
+    double throughput = (update != null && update.getThroughputPerMin() != null)
+            ? update.getThroughputPerMin()
+            : 20;
+
+    // 🔥 FINAL HYBRID LOGIC
+    int effectivePeople = Math.max(redisPeople, communityPeople);
+
+    double avgGroupSize = 1.5;
+
+    double waitTime = (effectivePeople * avgGroupSize) / throughput;
+
+    return new WaitTimeResponse(
+            (int) Math.ceil(waitTime),
+            effectivePeople,
+            avgGroupSize,
+            throughput
+    );
 }
-int peopleAhead = totalPeople;
-        double avgGroupSize = 1.5;
-        double throughput = 20; // persons/min
-
-        double waitTime = (peopleAhead * avgGroupSize) / throughput;
-
-        return new WaitTimeResponse(
-                (int) Math.ceil(waitTime),
-                peopleAhead,
-                avgGroupSize,
-                throughput
-        );
-    }
 }
