@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
 import {
-  getVibe,
-  getRecommendation,
-  getTrend,
   getWaitTime
 } from "../services/api";
 
 import CrowdChart from "./CrowdChart";
+import { getPrediction } from "../services/api";
 
 export default function LiveIntelligence({ placeId }) {
-  const [vibe, setVibe] = useState(null);
-  const [recommendation, setRecommendation] = useState(null);
-  const [trendData, setTrendData] = useState([]);
+ 
+ 
   const [loading, setLoading] = useState(true);
   const [waitData, setWaitData] = useState(null);
+  const [prediction, setPrediction] = useState(null);
 
   useEffect(() => {
   loadData();
@@ -32,15 +30,12 @@ export default function LiveIntelligence({ placeId }) {
   try {
     setLoading(true);
 
-    const vibeData = await getVibe(placeId);
-    const recData = await getRecommendation(placeId);
-    const trend = await getTrend(placeId);
     const wait = await getWaitTime(placeId);
-    setVibe(vibeData);
-    setRecommendation(recData);
-    setTrendData(trend);
+    const predData = await getPrediction(placeId);
+    
+  
     setWaitData(wait);
-
+    setPrediction(predData);
   } catch (err) {
     console.error("Error loading Live Intelligence:", err);
   } finally {
@@ -61,12 +56,12 @@ export default function LiveIntelligence({ placeId }) {
           <p className="text-gray-500">Current Crowd Density</p>
 
           <h2 className="text-4xl font-bold mt-2">
-            {vibe ? vibe.vibeScore * 10 : 0}%
+         {waitData ? `${waitData.crowdLevel}%` : "--%"}
           </h2>
 
           <p className="text-gray-500 mt-1">
-            {vibe?.label || "Loading..."}
-          </p>
+            {"Loading..."}
+          </p>  
         </div>
 
         {/* Estimated Wait */}
@@ -89,22 +84,32 @@ export default function LiveIntelligence({ placeId }) {
         </div>
       </div>
 
-      {/* 🤖 AI PREDICTION */}
-      {recommendation && (
-        <div className="bg-orange-50 border-l-4 border-orange-400 rounded-xl p-5">
-          <p className="font-semibold text-orange-700">
-            🤖 AI Prediction
-          </p>
+      
+      {prediction && (
+  <div className="bg-blue-50 border-l-4 border-blue-400 rounded-xl p-5">
+    <p className="font-semibold text-blue-700">
+      📊 Smart Recommendation
+    </p>
 
-          <p className="text-gray-700 mt-1">
-            {recommendation.recommendation}
-          </p>
+    <p className="text-gray-700 mt-1">
+      Best time to visit:{" "}
+      <span className="font-semibold">
+        {prediction.bestTime}
+      </span>
+    </p>
 
-          <p className="text-gray-500 mt-2">
-            Trend: {recommendation.trend}
-          </p>
-        </div>
-      )}
+    <p className="text-gray-700">
+      Expected wait:{" "}
+      <span className="font-semibold">
+        {prediction.bestWait} min
+      </span>
+    </p>
+
+    <p className="text-sm text-gray-500 mt-1">
+      Based on current crowd trends
+    </p>
+  </div>
+)}
 
       {/* 📊 GRAPH */}
       <div className="bg-white rounded-xl shadow p-6">
@@ -112,7 +117,7 @@ export default function LiveIntelligence({ placeId }) {
           Today's Hourly Trend
         </p>
 
-        <CrowdChart data={trendData} />
+        <CrowdChart data={prediction?.timeline} />
       </div>
     </div>
   );

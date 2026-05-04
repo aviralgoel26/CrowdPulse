@@ -18,33 +18,11 @@ export const getPlaceDetails = async (id) => {
   return res.json();
 };
 
-// ✅ Get vibe
-export const getVibe = async (placeId) => {
-  try {
-    const res = await fetch(`${BASE_URL}/metrics/vibe/${placeId}`);
-    return await res.json();
-  } catch (err) {
-    console.error("Error fetching vibe", err);
-    return null;
-  }
-};
 
-// ✅ Get recommendation
-export const getRecommendation = async (placeId) => {
-  try {
-    const res = await fetch(`${BASE_URL}/metrics/recommendation/${placeId}`);
-    return await res.json();
-  } catch (err) {
-    console.error("Error fetching recommendation", err);
-    return null;
-  }
-};
 
-//  ✅ Get trend data
-export const getTrend = async (id) => {
-  const res = await fetch(`${BASE_URL}/metrics/trend/${id}`);
-  return res.json();
-};
+
+
+
 
 //  ✅ Get wait time
 export const getWaitTime = async (id) => {
@@ -65,5 +43,10 @@ export const getQueueStatus = async (placeId, userId) => {
   const res = await fetch(
     `${BASE_URL}/queue/status/${placeId}?userId=${userId}`
   );
+  return res.json();
+};
+
+export const getPrediction = async (placeId) => {
+  const res = await fetch(`http://localhost:8081/api/v1/crowdpulse/predict/${placeId}`);
   return res.json();
 };

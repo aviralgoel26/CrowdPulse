@@ -4,7 +4,7 @@ import com.crowdpulse.backend.service.PredictionService;
 import com.crowdpulse.backend.service.QueueService;
 import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.service.CommunityService;
-
+import java.time.format.DateTimeFormatter;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
@@ -46,7 +46,9 @@ public class PredictionServiceImpl implements PredictionService {
             int futureWait = (int) Math.ceil((futurePeople * 1.5) / throughput);
 
             Map<String, Object> point = new HashMap<>();
-            point.put("time", LocalTime.now().plusMinutes(i * 30).toString());
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+
+            point.put("time", LocalTime.now().plusMinutes(i * 30).format(formatter));
             point.put("wait", futureWait);
 
             timeline.add(point);

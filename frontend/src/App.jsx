@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Explore from "./pages/Explore";
 import PlaceDetail from "./pages/PlaceDetail";
-import { getPlaces, getVibe } from "./services/api";
+import { getPlaces } from "./services/api";
 import CommunityPortal from "./pages/CommunityPortal";
 function App() {
   return (

@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getPlaceDetails, getVibe, getRecommendation } from "../services/api";
+import { getPlaceDetails } from "../services/api";
 import LiveIntelligence from "../components/LiveIntelligence";
 import VirtualQueue from "../components/VirtualQueue";
 
@@ -10,8 +10,8 @@ export default function PlaceDetail() {
 
   const [tab, setTab] = useState("info");
   const [placeDetails, setPlaceDetails] = useState(null);
-  const [vibe, setVibe] = useState(null);
-  const [recommendation, setRecommendation] = useState(null);
+ // const [vibe, setVibe] = useState(null);
+ // const [recommendation, setRecommendation] = useState(null);
   const [imageIndex, setImageIndex] = useState(0);
 
   useEffect(() => {
@@ -21,12 +21,12 @@ export default function PlaceDetail() {
   const loadData = async () => {
     try {
       const details = await getPlaceDetails(id);
-      const vibeData = await getVibe(id);
-      const recData = await getRecommendation(id);
+    //  const vibeData = await getVibe(id);
+    //  const recData = await getRecommendation(id);
 
       setPlaceDetails(details);
-      setVibe(vibeData);
-      setRecommendation(recData);
+    //  setVibe(vibeData);
+    //  setRecommendation(recData);
     } catch (err) {
       console.error("Error loading data:", err);
     }
