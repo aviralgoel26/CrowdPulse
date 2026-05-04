@@ -26,7 +26,7 @@ public class PredictionServiceImpl implements PredictionService {
     public Map<String, Object> getPrediction(Long placeId) {
 
         // Current wait
-        int currentWait = queueService.calculateWaitTime(placeId).getWaitTime();
+        int currentWait = queueService.calculateWaitTime(placeId).getWaitMinutes();
 
         CommunityUpdate update = communityService.getLatestUpdate(placeId);
 
