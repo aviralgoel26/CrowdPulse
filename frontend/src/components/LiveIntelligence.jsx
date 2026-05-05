@@ -46,7 +46,9 @@ export default function LiveIntelligence({ placeId }) {
   return (
     <div className="space-y-6">
 {loading && (
-  <p className="text-gray-400">Updating live data...</p>
+  <p className="text-gray-400 animate-pulse">
+    Updating live data...
+  </p>
 )}
       {/* 🔥 TOP CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -56,7 +58,7 @@ export default function LiveIntelligence({ placeId }) {
           <p className="text-gray-500">Current Crowd Density</p>
 
           <h2 className="text-4xl font-bold mt-2">
-         {waitData ? `${waitData.crowdLevel}%` : "--%"}
+         {waitData ? `${waitData.peopleAhead} people` : "--"}
           </h2>
 
           <p className="text-gray-500 mt-1">
@@ -86,28 +88,49 @@ export default function LiveIntelligence({ placeId }) {
 
       
       {prediction && (
-  <div className="bg-blue-50 border-l-4 border-blue-400 rounded-xl p-5">
+  <div className="bg-blue-50 border-l-4 border-blue-400 rounded-xl p-5 space-y-2">
+
     <p className="font-semibold text-blue-700">
-      📊 Smart Recommendation
+      📊 Smart Intelligence
     </p>
 
-    <p className="text-gray-700 mt-1">
-      Best time to visit:{" "}
+    <p>
+      🟢 Current Wait:{" "}
       <span className="font-semibold">
-        {prediction.bestTime}
+        {prediction.currentWait} min
       </span>
     </p>
 
-    <p className="text-gray-700">
-      Expected wait:{" "}
+    <p>
+      📉 Best Time:{" "}
       <span className="font-semibold">
-        {prediction.bestWait} min
+        {prediction?.bestTime || "--"}
       </span>
+      {" "}({prediction.bestWait} min)
     </p>
 
-    <p className="text-sm text-gray-500 mt-1">
-      Based on current crowd trends
+    <p>
+      📈 Peak Time:{" "}
+      <span className="font-semibold">
+        {prediction.peakTime}
+      </span>
+      {" "}({prediction.peakWait} min)
     </p>
+
+    <p className={`font-semibold ${
+      prediction.trend === "RISING"
+        ? "text-red-500"
+        : prediction.trend === "FALLING"
+        ? "text-green-500"
+        : "text-gray-500"
+    }`}>
+      📊 Trend: {prediction.trend}
+    </p>
+
+    <p className="text-blue-600 font-medium">
+      💡 {prediction.recommendation}
+    </p>
+
   </div>
 )}
 
@@ -117,7 +140,7 @@ export default function LiveIntelligence({ placeId }) {
           Today's Hourly Trend
         </p>
 
-        <CrowdChart data={prediction?.timeline} />
+        <CrowdChart data={prediction?.timeline || []} />
       </div>
     </div>
   );

@@ -4,7 +4,16 @@ import { connectSocket, disconnectSocket } from "../services/socket";
 
 export default function VirtualQueue({ placeId }) {
   // 1. Generate ID once and keep it (avoiding reset on re-renders)
-  const [userId] = useState(() => "user_" + Math.floor(Math.random() * 10000));
+  const [userId] = useState(() => {
+  let id = localStorage.getItem("userId");
+
+  if (!id) {
+    id = "user_" + Math.floor(Math.random() * 1000000);
+    localStorage.setItem("userId", id);
+  }
+
+  return id;
+});
 
   const [joined, setJoined] = useState(false);
   const [status, setStatus] = useState(null);
@@ -47,6 +56,31 @@ export default function VirtualQueue({ placeId }) {
       };
     }
   }, [joined, placeId]); // Added placeId as dependency for safety
+
+  useEffect(() => {
+
+  if (!placeId || !userId || !joined) return;
+
+  const interval = setInterval(() => {
+
+    fetch(`http://localhost:8080/api/v1/crowdpulse/queue/heartbeat?placeId=${placeId}&userId=${userId}`, {
+      method: "POST"
+    })
+    .then(res => {
+        if (!res.ok) console.warn("Heartbeat server-side error");
+      })
+      .catch((err) => {
+        // This is where the magic happens. 
+        // We catch the error so the app doesn't crash.
+        console.error("Heartbeat network failed (Silent Catch):", err.message);
+      });
+
+  }, 10000);
+
+  return () => clearInterval(interval);
+
+}, [placeId, userId, joined]);
+
 
   return (
     <div className="space-y-6">

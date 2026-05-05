@@ -35,9 +35,11 @@ public class Place {
     private int radius;
     private int capacity;
 
+    @Column(name = "scaling_factor")
+    private double scalingFactor=1.0;
 
-    private double scalingFactor = 1.2; // default
-    private int adminOffset = 0;
+    @Column(name = "admin_offset")
+    private Integer adminOffset=0;
 
     // Getters and Setters
     public int getCapacity() {
@@ -53,13 +55,21 @@ public class Place {
 public void setType(PlaceType type) {
     this.type = type;
 }
-public double getScalingFactor() {
-    return scalingFactor;
+        public Double getScalingFactor() {
+            return scalingFactor;
+        }
+        public void setScalingFactor(Double scalingFactor) {
+    this.scalingFactor = scalingFactor;
 }
 
-public int getAdminOffset() {
+public Integer getAdminOffset() {
     return adminOffset;
 }
+public void setAdminOffset(Integer adminOffset) {
+    this.adminOffset = adminOffset;
+}
+
+
 
     
     @Column(name = "is_active")

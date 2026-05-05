@@ -48,7 +48,7 @@ public Map<String, Object> joinQueue(Long placeId, String userId, int groupSize)
 
     long now = System.currentTimeMillis();
 
-String value = userId + ":" + groupSize + ":" + now;
+String value = userId + ":" + groupSize + ":" + now + ":ACTIVE";
 
     redisTemplate.opsForList().rightPush(key, value);
 
@@ -79,27 +79,24 @@ public Map<String, Object> getStatus(Long placeId, String userId) {
 
     for (int i = 0; i < queue.size(); i++) {
 
-        String entry = queue.get(i);
-        String[] parts = entry.split(":");
+    String entry = queue.get(i);
+    String[] parts = entry.split(":");
 
-        String queuedUser = parts[0];
-        int groupSize = Integer.parseInt(parts[1]);
-        long lastSeen = Long.parseLong(parts[2]);
+    String queuedUser = parts[0];
+    int groupSize = Integer.parseInt(parts[1]);
 
-        if (queuedUser.equals(userId)) {
-            position = i + 1;
-            break;
-        }
+    String heartbeatKey = "heartbeat:" + placeId + ":" + queuedUser;
 
-        long now = System.currentTimeMillis();
+    boolean isAlive = Boolean.TRUE.equals(redisTemplate.hasKey(heartbeatKey));
 
-// 🔥 SHADOW LOGIC
-long diffMinutes = (now - lastSeen) / (1000 * 60);
-
-if (diffMinutes < 30) {
-    peopleAhead += groupSize; // ACTIVE + SHADOW
-}
+    if (queuedUser.equals(userId)) {
+        position = i + 1;
+        break;
     }
+
+    // ACTIVE + SHADOW both counted
+    peopleAhead += groupSize;
+}
 
     if (position == 0) {
         return Map.of("message", "User not in queue");
@@ -143,15 +140,31 @@ public WaitTimeResponse calculateWaitTime(Long placeId) {
             : 20;
 
     // 🔥 FINAL HYBRID LOGIC
-    int effectivePeople = Math.max(redisPeople, communityPeople);
+    // 🔹 Get place data
+var place = placeRepository.findById(placeId).orElse(null);
+
+double scalingFactor = (place != null && place.getScalingFactor() != null)
+        ? place.getScalingFactor()
+        : 1.0;
+
+int adminOffset = (place != null && place.getAdminOffset() != null)
+        ? place.getAdminOffset()
+        : 0;
+
+// 🔹 Hybrid base
+int basePeople = Math.max(redisPeople, communityPeople);
+
+// 🔥 HEURISTIC CORRECTION
+double correctedPeople =
+        (basePeople * scalingFactor) + adminOffset;
 
     double avgGroupSize = 1.5;
 
-    double waitTime = (effectivePeople * avgGroupSize) / throughput;
+    double waitTime = (correctedPeople * avgGroupSize) / throughput;
 
     return new WaitTimeResponse(
             (int) Math.ceil(waitTime),
-            effectivePeople,
+            (int) Math.ceil(correctedPeople),
             avgGroupSize,
             throughput
     );

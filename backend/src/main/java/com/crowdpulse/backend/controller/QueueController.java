@@ -40,34 +40,20 @@ public class QueueController {
         return queueService.calculateWaitTime(placeId);
     }
 
-    @PostMapping("/heartbeat/{placeId}/{userId}")
-public String heartbeat(@PathVariable Long placeId,
-                        @PathVariable String userId) {
+    // 🧹 HEARTBEAT
+    @PostMapping("/heartbeat")
+public String heartbeat(@RequestParam Long placeId,
+                        @RequestParam String userId) {
 
-    String key = "queue:place:" + placeId;
+    String key = "heartbeat:" + placeId + ":" + userId;
 
-    List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
+    redisTemplate.opsForValue().set(
+            key,
+            String.valueOf(System.currentTimeMillis()),
+            java.time.Duration.ofSeconds(40)
+    );
 
-    if (queue == null) return "No queue";
-
-    for (int i = 0; i < queue.size(); i++) {
-
-        String entry = queue.get(i);
-        String[] parts = entry.split(":");
-
-        if (parts[0].equals(userId)) {
-
-            int groupSize = Integer.parseInt(parts[1]);
-
-            String updated = userId + ":" + groupSize + ":" + System.currentTimeMillis();
-
-            redisTemplate.opsForList().set(key, i, updated);
-
-            return "Heartbeat updated";
-        }
-    }
-
-    return "User not found";
+    return "Heartbeat updated";
 }
 
     
