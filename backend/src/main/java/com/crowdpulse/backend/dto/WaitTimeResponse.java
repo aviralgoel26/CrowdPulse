@@ -6,15 +6,18 @@ public class WaitTimeResponse {
     private int peopleAhead;
     private double avgGroupSize;
     private double throughput;
+    private String queueStatus;
 
     public WaitTimeResponse(int waitMinutes,
                             int peopleAhead,
                             double avgGroupSize,
-                            double throughput) {
+                            double throughput,
+                        String queueStatus) {
         this.waitMinutes = waitMinutes;
         this.peopleAhead = peopleAhead;
         this.avgGroupSize = avgGroupSize;
         this.throughput = throughput;
+        this.queueStatus = queueStatus;
     }
 
     // getters
@@ -22,4 +25,5 @@ public class WaitTimeResponse {
     public int getPeopleAhead() { return peopleAhead; }
     public double getAvgGroupSize() { return avgGroupSize; }
     public double getThroughput() { return throughput; }
+    public String getQueueStatus() { return queueStatus; }
 }

@@ -14,6 +14,28 @@ export default function VirtualQueue({ placeId }) {
 
   return id;
 });
+useEffect(() => {
+
+  const checkExistingQueue = async () => {
+
+    try {
+
+      const res = await getQueueStatus(placeId, userId);
+
+      if (!res.message) {
+
+        setJoined(true);
+        setStatus(res);
+      }
+
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  checkExistingQueue();
+
+}, [placeId, userId]);
 
   const [joined, setJoined] = useState(false);
   const [status, setStatus] = useState(null);

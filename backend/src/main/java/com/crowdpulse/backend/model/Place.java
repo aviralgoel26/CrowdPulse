@@ -34,6 +34,7 @@ public class Place {
 
     private int radius;
     private int capacity;
+    private String queueStatus = "ACTIVE";
 
     @Column(name = "scaling_factor")
     private double scalingFactor=1.0;
@@ -41,7 +42,78 @@ public class Place {
     @Column(name = "admin_offset")
     private Integer adminOffset=0;
 
+    private Integer baseThroughput;
+
+private String peakStart;
+private String peakEnd;
+
+private Double peakMultiplier = 1.5;
+
+private Double seasonMultiplier = 1.0;
+
+private Integer maxDailyCapacity;
+
+private Integer concurrentCapacity;
+
     // Getters and Setters
+
+    public String getQueueStatus() {
+    return queueStatus;
+}
+
+public void setQueueStatus(String queueStatus) {
+    this.queueStatus = queueStatus;
+}
+    public Integer getBaseThroughput() {
+    return baseThroughput;
+    }
+    public void setBaseThroughput(Integer baseThroughput) {
+    this.baseThroughput = baseThroughput;
+    }   
+
+    public String getPeakStart() {
+    return peakStart;
+    }   
+    public void setPeakStart(String peakStart) {
+    this.peakStart = peakStart;
+    }
+
+    public String getPeakEnd() {
+    return peakEnd; 
+    }
+    public void setPeakEnd(String peakEnd) {        
+    this.peakEnd = peakEnd;
+    }
+
+    public Double getPeakMultiplier() {
+    return peakMultiplier;
+    }
+    public void setPeakMultiplier(Double peakMultiplier) {
+    this.peakMultiplier = peakMultiplier;   
+    }
+    
+    public Double getSeasonMultiplier() {
+    return seasonMultiplier;
+    }
+    public void setSeasonMultiplier(Double seasonMultiplier) {
+    this.seasonMultiplier = seasonMultiplier;
+    }
+
+    public Integer getMaxDailyCapacity() {
+    return maxDailyCapacity;    
+    }
+    public void setMaxDailyCapacity(Integer maxDailyCapacity) { 
+    this.maxDailyCapacity = maxDailyCapacity;
+    }  
+
+    public Integer getConcurrentCapacity() {
+    return concurrentCapacity;
+    }
+    public void setConcurrentCapacity(Integer concurrentCapacity) {
+    this.concurrentCapacity = concurrentCapacity;   
+    }
+
+
     public int getCapacity() {
     return capacity;
     }

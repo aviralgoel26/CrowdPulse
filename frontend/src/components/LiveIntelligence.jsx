@@ -26,6 +26,11 @@ export default function LiveIntelligence({ placeId }) {
 
 }, [placeId]);
 
+const formatTime = (time) => {
+  if (!time) return "--";
+  return time.slice(0, 5); // HH:mm
+};
+
   const loadData = async () => {
   try {
     setLoading(true);
@@ -53,18 +58,22 @@ export default function LiveIntelligence({ placeId }) {
       {/* 🔥 TOP CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Crowd Density */}
-        <div className="bg-white rounded-xl shadow p-6">
-          <p className="text-gray-500">Current Crowd Density</p>
+        {/* Live Crowd */}
+<div className="bg-white rounded-xl shadow p-6">
 
-          <h2 className="text-4xl font-bold mt-2">
-         {waitData ? `${waitData.peopleAhead} people` : "--"}
-          </h2>
+  <p className="text-gray-500">
+    Live Crowd Estimate
+  </p>
 
-          <p className="text-gray-500 mt-1">
-            {"Loading..."}
-          </p>  
-        </div>
+  <h2 className="text-4xl font-bold mt-2 text-orange-500">
+    {waitData ? waitData.peopleAhead : "--"}
+  </h2>
+
+  <p className="text-gray-500 mt-1">
+    people currently ahead in queue
+  </p>
+
+</div>
 
         {/* Estimated Wait */}
         <div className="bg-white rounded-xl shadow p-6">
@@ -84,6 +93,30 @@ export default function LiveIntelligence({ placeId }) {
             based on live data
           </p>
         </div>
+
+        <div className="bg-white rounded-xl shadow p-6">
+
+  <p className="text-gray-500">
+    Queue Status
+  </p>
+
+  <h2 className={`text-3xl font-bold mt-2 ${
+    waitData?.queueStatus === "ACTIVE"
+      ? "text-green-600"
+      : waitData?.queueStatus === "PAUSED"
+      ? "text-yellow-500"
+      : "text-red-600"
+  }`}>
+
+    {waitData?.queueStatus || "UNKNOWN"}
+
+  </h2>
+
+  <p className="text-gray-500 mt-1">
+    live operational status
+  </p>
+
+</div>
       </div>
 
       
@@ -93,6 +126,18 @@ export default function LiveIntelligence({ placeId }) {
     <p className="font-semibold text-blue-700">
       📊 Smart Intelligence
     </p>
+
+    <p className={`font-bold ${
+  prediction.alert === "EXTREME"
+    ? "text-red-600"
+    : prediction.alert === "HIGH"
+    ? "text-orange-500"
+    : prediction.alert === "MODERATE"
+    ? "text-yellow-500"
+    : "text-green-600"
+}`}>
+  🚦 Crowd Alert: {prediction.alert}
+</p>
 
     <p>
       🟢 Current Wait:{" "}
@@ -104,7 +149,7 @@ export default function LiveIntelligence({ placeId }) {
     <p>
       📉 Best Time:{" "}
       <span className="font-semibold">
-        {prediction?.bestTime || "--"}
+        {formatTime(prediction?.bestTime) || "--"}
       </span>
       {" "}({prediction.bestWait} min)
     </p>
@@ -112,7 +157,7 @@ export default function LiveIntelligence({ placeId }) {
     <p>
       📈 Peak Time:{" "}
       <span className="font-semibold">
-        {prediction.peakTime}
+        {formatTime(prediction.peakTime)}
       </span>
       {" "}({prediction.peakWait} min)
     </p>

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.service.CommunityService;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +39,28 @@ public class QueueServiceImpl implements QueueService {
     @Override
 public Map<String, Object> joinQueue(Long placeId, String userId, int groupSize) {
 
+    var place = placeRepository.findById(placeId).orElse(null);
+
+if (place != null) {
+
+    String status = place.getQueueStatus();
+
+    if ("CLOSED".equals(status)) {
+
+        return Map.of(
+                "message",
+                "Queue is currently closed"
+        );
+    }
+
+    if ("PAUSED".equals(status)) {
+
+        return Map.of(
+                "message",
+                "Queue temporarily paused"
+        );
+    }
+}
     String key = getQueueKey(placeId);
 
     // Prevent duplicate
@@ -66,6 +89,23 @@ String value = userId + ":" + groupSize + ":" + now + ":ACTIVE";
    @Override
 public Map<String, Object> getStatus(Long placeId, String userId) {
 
+    CommunityUpdate update =
+        communityService.getLatestUpdate(placeId);
+
+int communityPeople =
+        (update != null &&
+         update.getReportedQueueLength() != null)
+        ? update.getReportedQueueLength()
+        : 0;
+
+        var place =
+        placeRepository.findById(placeId).orElse(null);
+
+double scalingFactor =
+        (place != null &&
+         place.getScalingFactor() != null)
+        ? place.getScalingFactor()
+        : 1.0;
     String key = getQueueKey(placeId);
 
     List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
@@ -90,22 +130,58 @@ public Map<String, Object> getStatus(Long placeId, String userId) {
     boolean isAlive = Boolean.TRUE.equals(redisTemplate.hasKey(heartbeatKey));
 
     if (queuedUser.equals(userId)) {
-        position = i + 1;
+        position = peopleAhead + 1;
         break;
     }
 
     // ACTIVE + SHADOW both counted
     peopleAhead += groupSize;
 }
+int virtualPeopleAhead =
+        (int) Math.ceil(
+                Math.max(
+                        peopleAhead,
+                        communityPeople
+                ) * scalingFactor
+        );
 
+int virtualPosition =
+        virtualPeopleAhead + 1;
+
+        double throughput = 30;
+
+if (place != null &&
+    place.getBaseThroughput() != null) {
+
+    throughput = place.getBaseThroughput();
+}
+
+double waitMinutes =
+        (virtualPeopleAhead * 1.5) / throughput;
+
+LocalTime eta =
+        LocalTime.now()
+                 .plusMinutes((long) waitMinutes);
     if (position == 0) {
         return Map.of("message", "User not in queue");
     }
 
-    return Map.of(
-            "position", position,
-            "peopleAhead", peopleAhead
-    );
+   return Map.of(
+
+        "position", virtualPosition,
+
+        "peopleAhead", virtualPeopleAhead,
+
+        "estimatedDarshanTime",
+        eta.toString(),
+
+        "groupSize",
+        queue.stream()
+                .filter(q -> q.startsWith(userId + ":"))
+                .map(q -> Integer.parseInt(q.split(":")[1]))
+                .findFirst()
+                .orElse(1)
+);
 }
     // ==============================
     // ⏱️ WAIT TIME CALCULATION
@@ -135,13 +211,36 @@ public WaitTimeResponse calculateWaitTime(Long placeId) {
             ? update.getReportedQueueLength()
             : 0;
 
-    double throughput = (update != null && update.getThroughputPerMin() != null)
-            ? update.getThroughputPerMin()
-            : 20;
+    
 
     // 🔥 FINAL HYBRID LOGIC
     // 🔹 Get place data
 var place = placeRepository.findById(placeId).orElse(null);
+double throughput = 30;
+
+if (place != null && place.getBaseThroughput() != null) {
+    throughput = place.getBaseThroughput();
+}
+
+LocalTime now = LocalTime.now();
+
+if (place != null &&
+    place.getPeakStart() != null &&
+    place.getPeakEnd() != null) {
+
+    LocalTime peakStart = LocalTime.parse(place.getPeakStart());
+    LocalTime peakEnd = LocalTime.parse(place.getPeakEnd());
+
+    if (now.isAfter(peakStart) && now.isBefore(peakEnd)) {
+
+        throughput = throughput / place.getPeakMultiplier();
+    }
+}
+
+if (place != null && place.getSeasonMultiplier() != null) {
+
+    throughput = throughput / place.getSeasonMultiplier();
+}
 
 double scalingFactor = (place != null && place.getScalingFactor() != null)
         ? place.getScalingFactor()
@@ -161,12 +260,16 @@ double correctedPeople =
     double avgGroupSize = 1.5;
 
     double waitTime = (correctedPeople * avgGroupSize) / throughput;
-
+String queueStatus =
+        (place != null)
+                ? place.getQueueStatus()
+                : "ACTIVE";
     return new WaitTimeResponse(
             (int) Math.ceil(waitTime),
             (int) Math.ceil(correctedPeople),
             avgGroupSize,
-            throughput
+            throughput,
+            queueStatus
     );
 }
 }

@@ -1,59 +1,78 @@
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  Tooltip,
   ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid
 } from "recharts";
 
 export default function CrowdChart({ data }) {
-  /*if (!data || data.length === 0) {
-    return <p className="text-gray-400">No data available</p>;
-  }*/
- const fallbackData = [
-  { time: "8 AM", value: 20 },
-  { time: "9 AM", value: 35 },
-  { time: "10 AM", value: 55 },
-  { time: "11 AM", value: 80 },
-  { time: "12 PM", value: 95 },
-  { time: "1 PM", value: 90 },
-  { time: "2 PM", value: 75 },
-  { time: "3 PM", value: 60 },
-  { time: "4 PM", value: 50 },
-  { time: "5 PM", value: 65 },
-  { time: "6 PM", value: 85 },
-  { time: "7 PM", value: 70 },
-];
 
-const chartData = data && data.length > 0 ? data : fallbackData;
-
+  // fallback
+  const chartData = data && data.length > 0
+    ? data
+    : [
+        { time: "10:00", wait: 20 },
+        { time: "12:00", wait: 45 },
+        { time: "14:00", wait: 60 },
+        { time: "16:00", wait: 35 },
+      ];
 
   return (
-    <div className="flex items-end gap-3 h-40">
+    <div className="w-full h-[350px]">
 
-      {chartData.map((point, index) => (
+      <ResponsiveContainer width="100%" height="100%">
 
-        <div key={index} className="flex flex-col items-center flex-1">
+        <LineChart
+          data={chartData}
+          margin={{
+            top: 20,
+            right: 30,
+            left: 10,
+            bottom: 10,
+          }}
+        >
 
-          {/* Bar */}
-          <div
-            className={`w-full rounded-t-md ${
-              point.wait > 60
-                ? "bg-red-500"
-                : point.wait > 30
-                ? "bg-orange-400"
-                : "bg-green-500"
-            }`}
-            style={{ height: `${point.wait}px` }}
+          {/* Grid */}
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#e5e7eb"
           />
 
-          {/* Label */}
-          <span className="text-xs mt-1 text-gray-500">
-            {point.time}
-          </span>
+          {/* X Axis */}
+          <XAxis
+            dataKey="time"
+            tick={{ fontSize: 12 }}
+          />
 
-        </div>
-      ))}
+          {/* Y Axis */}
+          <YAxis
+            tick={{ fontSize: 12 }}
+            label={{
+              value: "Wait (min)",
+              angle: -90,
+              position: "insideLeft"
+            }}
+          />
+
+          {/* Tooltip */}
+          <Tooltip />
+
+          {/* Trend Line */}
+          <Line
+            type="monotone"
+            dataKey="wait"
+            stroke="#FF9933"
+            strokeWidth={4}
+            dot={{ r: 5 }}
+            activeDot={{ r: 8 }}
+          />
+
+        </LineChart>
+
+      </ResponsiveContainer>
 
     </div>
   );

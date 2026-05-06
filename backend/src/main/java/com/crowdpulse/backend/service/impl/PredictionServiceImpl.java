@@ -8,6 +8,7 @@ import com.crowdpulse.backend.service.CommunityService;
 import java.time.format.DateTimeFormatter;
 import com.crowdpulse.backend.model.QueueMetrics;
 import org.springframework.stereotype.Service;
+import com.crowdpulse.backend.repository.PlaceRepository;
 
 import java.time.LocalTime;
 import java.util.*;
@@ -18,16 +19,19 @@ public class PredictionServiceImpl implements PredictionService {
     private final QueueService queueService;
     private final CommunityService communityService;
     private final QueueMetricsRepository queueMetricsRepository;
+    private final PlaceRepository placeRepository;
 
     public PredictionServiceImpl(QueueService queueService,
                                  CommunityService communityService,
-                                 QueueMetricsRepository queueMetricsRepository) {
+                                 QueueMetricsRepository queueMetricsRepository,
+                                 PlaceRepository placeRepository ) {
         this.queueService = queueService;
         this.communityService = communityService;
         this.queueMetricsRepository = queueMetricsRepository;
+        this.placeRepository = placeRepository;
     }
 
-   @Override
+  @Override
 public Map<String, Object> getPrediction(Long placeId) {
 
     List<QueueMetrics> data =
@@ -37,65 +41,129 @@ public Map<String, Object> getPrediction(Long placeId) {
         return Map.of("message", "Not enough data");
     }
 
-    // 🔹 Sort oldest → latest (important for trend)
-    Collections.reverse(data);
+    // 🔥 CURRENT WAIT
+    int currentWait =
+            data.get(0).getWaitTime();
 
-    List<Map<String, Object>> timeline = new ArrayList<>();
+    // 🔥 FUTURE HOURLY FORECAST
+    List<Map<String, Object>> timeline =
+            new ArrayList<>();
 
-    for (QueueMetrics m : data) {
-        Map<String, Object> point = new HashMap<>();
+    LocalTime now = LocalTime.now();
 
-        point.put("time", m.getTimestamp().toLocalTime().toString());
-        point.put("wait", m.getWaitTime());
+    for (int i = 0; i < 8; i++) {
+
+        LocalTime future = now.plusHours(i);
+
+        int hour = future.getHour();
+
+        double multiplier = 1.0;
+
+        // 🔥 Kedarnath operational logic
+
+        // Morning rush
+        if (hour >= 8 && hour <= 12) {
+            multiplier = 2.0;
+        }
+
+        // Evening rush
+        else if (hour >= 16 && hour <= 19) {
+            multiplier = 1.7;
+        }
+
+        // Afternoon lighter crowd
+        else if (hour >= 13 && hour <= 15) {
+            multiplier = 0.8;
+        }
+
+        int predictedWait =
+                (int) Math.ceil(currentWait * multiplier);
+
+        Map<String, Object> point =
+                new HashMap<>();
+
+        point.put(
+                "time",
+                String.format("%02d:00", hour)
+        );
+
+        point.put("wait", predictedWait);
 
         timeline.add(point);
     }
 
-    // 🔥 CURRENT
-    int currentWait = data.get(data.size() - 1).getWaitTime();
+    // 🔥 BEST TIME
+    Map<String, Object> best =
+            timeline.stream()
+                    .min(Comparator.comparingInt(
+                            p -> (int) p.get("wait")
+                    ))
+                    .orElse(null);
 
-    // 🔥 BEST (MIN WAIT)
-    QueueMetrics best = data.stream()
-            .min(Comparator.comparingInt(QueueMetrics::getWaitTime))
-            .orElse(data.get(0));
+    // 🔥 PEAK TIME
+    Map<String, Object> peak =
+            timeline.stream()
+                    .max(Comparator.comparingInt(
+                            p -> (int) p.get("wait")
+                    ))
+                    .orElse(null);
 
-    // 🔥 PEAK (MAX WAIT)
-    QueueMetrics peak = data.stream()
-            .max(Comparator.comparingInt(QueueMetrics::getWaitTime))
-            .orElse(data.get(0));
-
-    // 🔥 TREND DETECTION (last 5 points)
-    int size = data.size();
+    // 🔥 TREND
     String trend = "STABLE";
 
-    if (size >= 5) {
-        int first = data.get(size - 5).getWaitTime();
-        int last = data.get(size - 1).getWaitTime();
-
-        if (last > first + 5) trend = "RISING";
-        else if (last < first - 5) trend = "FALLING";
+    if (currentWait > 90) {
+        trend = "RISING";
+    }
+    else if (currentWait < 30) {
+        trend = "FALLING";
     }
 
-    // 🔥 RECOMMENDATION ENGINE
+    // 🔥 RECOMMENDATION
     String recommendation;
 
     if ("RISING".equals(trend)) {
-        recommendation = "Crowd is increasing. Visit earlier if possible.";
-    } else if ("FALLING".equals(trend)) {
-        recommendation = "Crowd is decreasing. Good time to visit soon.";
-    } else {
-        recommendation = "Crowd is stable. You can visit anytime.";
+        recommendation =
+                "Heavy crowd expected in upcoming hours.";
+    }
+    else if ("FALLING".equals(trend)) {
+        recommendation =
+                "Crowd expected to reduce gradually.";
+    }
+    else {
+        recommendation =
+                "Crowd likely to remain stable.";
+    }
+
+    // 🔥 ALERT LEVEL
+    String alert = "NORMAL";
+
+    if (currentWait > 180) {
+        alert = "EXTREME";
+    }
+    else if (currentWait > 90) {
+        alert = "HIGH";
+    }
+    else if (currentWait > 45) {
+        alert = "MODERATE";
     }
 
     return Map.of(
+
             "currentWait", currentWait,
-            "bestTime", best.getTimestamp().toLocalTime().toString(),
-            "bestWait", best.getWaitTime(),
-            "peakTime", peak.getTimestamp().toLocalTime().toString(),
-            "peakWait", peak.getWaitTime(),
+
+            "bestTime", best.get("time"),
+            "bestWait", best.get("wait"),
+
+            "peakTime", peak.get("time"),
+            "peakWait", peak.get("wait"),
+
             "trend", trend,
+
             "recommendation", recommendation,
-            "timeline", timeline
+
+            "timeline", timeline,
+
+            "alert", alert
     );
 }
 }
