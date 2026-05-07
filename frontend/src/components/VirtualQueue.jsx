@@ -7,13 +7,32 @@ import {
   CheckCircle, 
   Zap,
   TrendingDown,
-  Activity
+  Activity,
+  Radio,
+  Shield,
+  Timer,
+  X,
+  ChevronDown,
+  Sparkles,
+  Signal
 } from "lucide-react";
 import { joinQueue, getQueueStatus, leaveQueue } from "../services/api";
 import { connectSocket, disconnectSocket } from "../services/socket";
 
+// ── Reusable Pulse Dot ──
+const PulseDot = ({ color = "#22c55e", size = 8 }) => (
+  <span className="relative inline-flex items-center justify-center" style={{ width: size * 2, height: size * 2 }}>
+    <span className="absolute animate-ping rounded-full opacity-50" style={{ width: size * 1.8, height: size * 1.8, backgroundColor: color }} />
+    <span className="relative rounded-full" style={{ width: size, height: size, backgroundColor: color }} />
+  </span>
+);
+
+// ── Skeleton ──
+const Skeleton = ({ className = "" }) => (
+  <div className={`animate-pulse rounded-xl bg-slate-100 ${className}`} />
+);
+
 export default function VirtualQueue({ placeId }) {
-  // User ID persistence
   const [userId] = useState(() => {
     let id = localStorage.getItem("userId");
     if (!id) {
@@ -23,7 +42,6 @@ export default function VirtualQueue({ placeId }) {
     return id;
   });
 
-  // State management
   const [joined, setJoined] = useState(false);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -31,15 +49,14 @@ export default function VirtualQueue({ placeId }) {
   const [checkingQueue, setCheckingQueue] = useState(true);
   const [previousPeopleAhead, setPreviousPeopleAhead] = useState(0);
   const [isMoving, setIsMoving] = useState(false);
-  const [isJoiningNow, setIsJoiningNow] = useState(false);  // 🆕 Prevent premature fetchStatus during join
+  const [isJoiningNow, setIsJoiningNow] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
 
-  // Check existing queue on mount
   useEffect(() => {
     const checkExistingQueue = async () => {
       try {
         setCheckingQueue(true);
         const res = await getQueueStatus(placeId, userId);
-        
         if (res && res.isUserInQueue === true) {
           setJoined(true);
           setStatus(res);
@@ -55,26 +72,18 @@ export default function VirtualQueue({ placeId }) {
         setCheckingQueue(false);
       }
     };
-
     checkExistingQueue();
   }, [placeId, userId]);
 
-  // Fetch status
   const fetchStatus = useCallback(async () => {
-    // 🆕 Skip fetchStatus during join process to prevent race conditions
     if (isJoiningNow) {
       console.debug("Skipping status fetch - join in progress");
       return;
     }
-
     try {
       const res = await getQueueStatus(placeId, userId);
-      
-      // Validate response properly
       if (res && typeof res === "object") {
-        // Explicitly check for isUserInQueue flag (new format)
         if (res.isUserInQueue === true) {
-          // Detect movement
           setPreviousPeopleAhead((prev) => {
             if (res.peopleAhead < prev) {
               setIsMoving(true);
@@ -82,15 +91,12 @@ export default function VirtualQueue({ placeId }) {
             }
             return res.peopleAhead || 0;
           });
-          
           setJoined(true);
           setStatus(res);
         } else if (res.isUserInQueue === false) {
-          // Explicit "not in queue" response
           setJoined(false);
           setStatus(null);
         } else {
-          // Unknown response format - don't change joined state
           console.warn("Unexpected response format:", res);
         }
       } else {
@@ -98,29 +104,20 @@ export default function VirtualQueue({ placeId }) {
       }
     } catch (err) {
       console.error("Status fetch failed:", err);
-      // Don't change joined state on error - keep showing queue UI
     }
   }, [placeId, userId, isJoiningNow]);
 
-  // Join queue
   const handleJoin = async () => {
     setLoading(true);
-    setIsJoiningNow(true);  // 🆕 Mark join process in progress
-    
+    setIsJoiningNow(true);
     try {
       const res = await joinQueue(placeId, userId, groupSize);
-      
       if (res.success !== false) {
         setJoined(true);
-        
-        // 🆕 Increased delay: Allow backend to:
-        // 1. Persist queue entry to Redis
-        // 2. Create heartbeat key
-        // 3. Ensure scheduler won't mark as SHADOW
         setTimeout(async () => {
-          setIsJoiningNow(false);  // Mark join as complete
+          setIsJoiningNow(false);
           await fetchStatus();
-        }, 1500);  // Increased from 500ms to 1500ms
+        }, 1500);
       } else {
         console.error("Join failed:", res.message);
         setIsJoiningNow(false);
@@ -133,12 +130,10 @@ export default function VirtualQueue({ placeId }) {
     }
   };
 
-  // ✅ LEAVE QUEUE (NEW - CRITICAL FIX)
   const handleLeave = async () => {
     setLoading(true);
     try {
       const res = await leaveQueue(placeId, userId);
-      
       if (res.success === true) {
         console.log("✅ Successfully left queue");
         setJoined(false);
@@ -156,23 +151,18 @@ export default function VirtualQueue({ placeId }) {
     }
   };
 
-  // Stable callback ref for WebSocket to avoid re-triggering useEffect
   const webSocketCallbackRef = useRef(null);
   const stateRef = useRef({ placeId, userId, isJoiningNow, fetchStatus });
 
-  // Update the ref whenever state changes (using ref to avoid effect dependencies)
   useEffect(() => {
     stateRef.current = { placeId, userId, isJoiningNow, fetchStatus };
   }, [placeId, userId, isJoiningNow, fetchStatus]);
 
-  // Create stable callback that reads from ref
   useEffect(() => {
     webSocketCallbackRef.current = async () => {
       console.debug("📩 WebSocket update received, fetching status...");
       const current = stateRef.current;
-      
       if (!current.isJoiningNow && current.fetchStatus) {
-        // Add small delay to allow backend to process
         setTimeout(() => {
           if (stateRef.current.fetchStatus && !stateRef.current.isJoiningNow) {
             stateRef.current.fetchStatus();
@@ -182,7 +172,6 @@ export default function VirtualQueue({ placeId }) {
     };
   }, []);
 
-  // WebSocket integration
   useEffect(() => {
     if (joined && placeId && userId) {
       const handleWebSocketMessage = () => {
@@ -190,100 +179,71 @@ export default function VirtualQueue({ placeId }) {
           webSocketCallbackRef.current();
         }
       };
-
       connectSocket(placeId, handleWebSocketMessage);
-      return () => {
-        disconnectSocket();
-      };
+      return () => { disconnectSocket(); };
     }
   }, [joined, placeId, userId]);
 
-  // Heartbeat & Polling
   useEffect(() => {
-    if (!placeId || !userId) return;  // Need these to send heartbeat
-
-    // ✅ CRITICAL FIX: Continue heartbeat even during join process
-    // This ensures the scheduler won't mark user as SHADOW
+    if (!placeId || !userId) return;
     const interval = setInterval(() => {
-      // 1. Heartbeat (always send to keep user active)
       fetch(
         `http://localhost:8081/api/v1/crowdpulse/queue/heartbeat?placeId=${placeId}&userId=${userId}`,
         { method: "POST" }
       )
-        .then(res => {
-          if (!res.ok) console.warn("Heartbeat error:", res.status);
-        })
-        .catch((err) => {
-          console.debug("Heartbeat network error:", err.message);
-        });
+        .then(res => { if (!res.ok) console.warn("Heartbeat error:", res.status); })
+        .catch((err) => { console.debug("Heartbeat network error:", err.message); });
 
-      // 2. Poll Status ONLY if joined and not in join process
       if (joined && !isJoiningNow) {
         fetchStatus();
       }
     }, 10000);
-
     return () => clearInterval(interval);
   }, [placeId, userId, joined, isJoiningNow, fetchStatus]);
 
-  // Determine queue status
   const getQueueStatusDisplay = () => {
-    if (!status) return { label: "Connecting...", color: "bg-gray-400", icon: "⚪" };
-    
+    if (!status) return { label: "Connecting...", color: "#6b7280", icon: Signal };
     switch (status.queueState) {
       case "ACTIVE":
-        if (status.peopleAhead === 0) return { label: "NEXT UP", color: "bg-green-500", icon: "🟢" };
-        if (status.peopleAhead < 10) return { label: "APPROACHING", color: "bg-blue-500", icon: "🔵" };
-        if (status.peopleAhead > 50) return { label: "HEAVY FLOW", color: "bg-yellow-500", icon: "🟡" };
-        return { label: "LIVE — Queue Active", color: "bg-green-500", icon: "🟢" };
+        if (status.peopleAhead === 0) return { label: "NEXT UP", color: "#22c55e", icon: Zap };
+        if (status.peopleAhead < 10) return { label: "APPROACHING", color: "#3b82f6", icon: TrendingDown };
+        if (status.peopleAhead > 50) return { label: "HEAVY FLOW", color: "#eab308", icon: Activity };
+        return { label: "LIVE — Queue Active", color: "#22c55e", icon: Activity };
       case "SHADOW":
-        return { label: "Standby Mode", color: "bg-orange-500", icon: "🟠" };
+        return { label: "Standby Mode", color: "#f97316", icon: Shield };
       default:
-        return { label: "Queue Paused", color: "bg-red-500", icon: "🔴" };
+        return { label: "Queue Paused", color: "#ef4444", icon: AlertCircle };
     }
   };
 
-  // Movement indicator
   const getMovementIndicator = () => {
-    if (!status) return { text: "Initializing...", color: "text-gray-500" };
-    
-    if (isMoving) {
-      return { text: "✨ Queue moving...", color: "text-green-500" };
-    }
-    
-    if (status.peopleAhead === 0) {
-      return { text: "🎉 You're next!", color: "text-green-500" };
-    }
-    
-    if (status.estimatedWaitMinutes <= 5) {
-      return { text: "🚀 Queue accelerating", color: "text-blue-500" };
-    }
-    
-    if (status.estimatedWaitMinutes > 20) {
-      return { text: "⏳ Heavy congestion", color: "text-orange-500" };
-    }
-    
-    return { text: "📊 Queue moving normally", color: "text-slate-600" };
+    if (!status) return { text: "Initializing...", color: "text-slate-400" };
+    if (isMoving) return { text: "Queue moving — position updated", color: "text-emerald-500" };
+    if (status.peopleAhead === 0) return { text: "You're next in line!", color: "text-emerald-500" };
+    if (status.estimatedWaitMinutes <= 5) return { text: "Queue accelerating", color: "text-blue-500" };
+    if (status.estimatedWaitMinutes > 20) return { text: "Heavy congestion detected", color: "text-amber-500" };
+    return { text: "Queue moving normally", color: "text-slate-500" };
   };
 
   const queueDisplay = getQueueStatusDisplay();
+  const QueueIcon = queueDisplay.icon;
   const movement = getMovementIndicator();
   const progressPercent = status ? Math.max(0, (100 - (status.peopleAhead / (status.peopleAhead + 1)) * 100)) : 0;
 
   if (checkingQueue) {
     return (
-      <motion.div 
-        className="flex justify-center items-center py-16"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
-        <div className="flex flex-col items-center gap-4">
-          <motion.div 
-            className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
-          <p className="text-slate-600 font-medium">Checking your queue status...</p>
+      <motion.div className="flex justify-center items-center py-20" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <div className="flex flex-col items-center gap-5">
+          <div className="relative w-16 h-16">
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 border-4 border-slate-200 border-t-[#FF9933] rounded-full" />
+            <motion.div animate={{ rotate: -360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-2 border-4 border-slate-200 border-t-[#FF9933]/50 rounded-full" />
+          </div>
+          <div className="text-center space-y-1">
+            <p className="text-slate-700 font-semibold">Checking queue status</p>
+            <p className="text-xs text-slate-400">Syncing with live system...</p>
+          </div>
         </div>
       </motion.div>
     );
@@ -293,241 +253,303 @@ export default function VirtualQueue({ placeId }) {
     <div className="w-full">
       <AnimatePresence mode="wait">
         {!joined ? (
-          // JOIN QUEUE FORM
-          <motion.div 
-            key="join-form"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-6 bg-gradient-to-br from-slate-50 to-slate-100 p-8 rounded-2xl"
-          >
-            <div>
-              <h2 className="text-3xl font-bold text-slate-900 mb-2">Join the Queue</h2>
-              <p className="text-slate-600">Experience live darshan tracking</p>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-700 mb-2 block">
-                  <Users className="inline w-4 h-4 mr-2" />
-                  Number of Pilgrims in Your Group
-                </span>
-                <motion.select
-                  value={groupSize}
-                  onChange={(e) => setGroupSize(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-3 border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all"
-                  whileHover={{ borderColor: "#FF9933" }}
-                  disabled={loading}
+          <motion.div key="join-form" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+            {!showGroupPicker ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="bg-white border border-slate-200 rounded-2xl p-10 md:p-14 text-center"
+              >
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.1, type: "spring" }}
+                  className="w-16 h-16 mx-auto mb-6 bg-[#FF9933]/10 border border-[#FF9933]/20 rounded-2xl flex items-center justify-center"
                 >
+                  <Users className="w-8 h-8 text-[#FF9933]" />
+                </motion.div>
+
+                <motion.h2
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="text-2xl md:text-3xl font-bold text-slate-900 mb-3"
+                >
+                  Join the Virtual Queue
+                </motion.h2>
+
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-slate-500 mb-8 max-w-md mx-auto leading-relaxed"
+                >
+                  Skip the physical line. Get a live sequence number and track your darshan time in real-time.
+                </motion.p>
+
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  onClick={() => setShowGroupPicker(true)}
+                  whileHover={{ scale: 1.02, boxShadow: "0 8px 30px rgba(255,153,51,0.2)" }}
+                  whileTap={{ scale: 0.98 }}
+                  className="inline-flex items-center gap-2.5 px-8 py-4 bg-[#FF9933] hover:bg-[#FF9933]/90 text-white rounded-xl font-bold text-base transition-all duration-300"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  Start Your Queue Journey
+                </motion.button>
+              </motion.div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white border border-slate-200 rounded-2xl p-8 md:p-10"
+              >
+                <div className="text-center mb-8">
+                  <div className="w-14 h-14 mx-auto mb-5 bg-[#FF9933]/10 border border-[#FF9933]/20 rounded-2xl flex items-center justify-center">
+                    <Users className="w-7 h-7 text-[#FF9933]" />
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">How many in your group?</h3>
+                  <p className="text-sm text-slate-500">Including yourself (max 10)</p>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-3 mb-8 max-w-sm mx-auto">
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                    <option key={n} value={n}>{n} {n === 1 ? "pilgrim" : "pilgrims"}</option>
+                    <motion.button
+                      key={n}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setGroupSize(n)}
+                      className={`w-12 h-12 rounded-xl font-bold text-base transition-all duration-200 ${
+                        groupSize === n
+                          ? "bg-[#FF9933] text-white shadow-lg shadow-[#FF9933]/20"
+                          : "bg-slate-50 border border-slate-200 text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {n}
+                    </motion.button>
                   ))}
-                </motion.select>
-              </label>
-            </div>
+                </div>
 
-            <motion.button
-              onClick={handleJoin}
-              disabled={loading}
-              whileHover={{ scale: 1.02, boxShadow: "0 20px 40px rgba(255, 153, 51, 0.3)" }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-400 text-white px-6 py-4 rounded-xl font-bold transition-all duration-300 text-lg shadow-lg"
-            >
-              {loading ? (
-                <motion.span 
-                  className="flex items-center justify-center gap-2"
-                  animate={{ opacity: [1, 0.5, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                >
-                  <motion.div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Joining Queue...
-                </motion.span>
-              ) : (
-                "Enter Virtual Queue"
-              )}
-            </motion.button>
+                <div className="flex items-center justify-center gap-4">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => { setShowGroupPicker(false); setGroupSize(1); }}
+                    className="px-6 py-3 text-slate-500 hover:text-slate-800 font-semibold text-sm transition-colors"
+                  >
+                    Cancel
+                  </motion.button>
 
-            <p className="text-center text-xs text-slate-500">
-              You'll receive a static sequence number and real-time tracking
-            </p>
+                  <motion.button
+                    onClick={handleJoin}
+                    disabled={loading}
+                    whileHover={{ scale: 1.02, boxShadow: "0 8px 30px rgba(255,153,51,0.2)" }}
+                    whileTap={{ scale: 0.98 }}
+                    className="px-8 py-3 bg-[#FF9933] hover:bg-[#FF9933]/90 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl font-bold text-sm transition-all duration-300 flex items-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <motion.div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} />
+                        Joining...
+                      </>
+                    ) : (
+                      <>Confirm & Get Badge</>
+                    )}
+                  </motion.button>
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         ) : (
-          // QUEUE STATUS DASHBOARD
-          <motion.div 
-            key="queue-dashboard"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-6"
-          >
-            {/* STATUS HEADER */}
-            <motion.div 
-              className={`${queueDisplay.color} text-white px-6 py-4 rounded-xl font-bold flex items-center gap-3 shadow-lg`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
+          <motion.div key="queue-dashboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-5">
+
+            {/* Status Banner */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 rounded-2xl border"
+              style={{
+                backgroundColor: `${queueDisplay.color}08`,
+                borderColor: `${queueDisplay.color}30`,
+              }}
             >
-              <motion.span 
-                className="text-2xl"
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                {queueDisplay.icon}
-              </motion.span>
-              <span className="text-lg tracking-wide">{queueDisplay.label}</span>
+              <div className="flex items-center gap-3">
+                <PulseDot color={queueDisplay.color} size={6} />
+                <span className="text-sm font-bold uppercase tracking-wider" style={{ color: queueDisplay.color }}>
+                  {queueDisplay.label}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Radio className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-xs text-slate-400 font-medium">WebSocket connected</span>
+              </div>
             </motion.div>
 
-            {/* MAIN SEQUENCE NUMBER */}
-            <motion.div 
-              className="bg-gradient-to-br from-orange-50 to-orange-100 border-3 border-orange-500 p-8 rounded-2xl text-center shadow-lg"
-              initial={{ scale: 0.9, opacity: 0 }}
+            {/* Sequence Number Card */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.3, type: "spring" }}
+              transition={{ delay: 0.1, type: "spring" }}
+              className="relative overflow-hidden bg-white border border-[#FF9933]/30 rounded-2xl p-8"
             >
-              <p className="text-sm font-semibold text-orange-700 mb-2 tracking-widest">YOUR SEQUENCE NUMBER</p>
-              <motion.div 
-                className="text-6xl font-black text-orange-600 tracking-tight"
-                initial={{ y: -20 }}
-                animate={{ y: 0 }}
-              >
-                #{status?.position}
-              </motion.div>
-              <p className="text-orange-600 font-medium mt-2">Your token remains static</p>
-            </motion.div>
+              <div className="absolute -top-20 -right-20 w-40 h-40 bg-[#FF9933]/5 rounded-full blur-2xl pointer-events-none" />
 
-            {/* PROGRESS VISUALIZATION */}
-            <motion.div 
-              className="bg-white border-2 border-slate-200 p-6 rounded-2xl"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-            >
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-3">
-                  <p className="text-sm font-semibold text-slate-700">Queue Progress</p>
-                  <motion.span 
-                    className="text-xs font-bold text-orange-600"
-                    animate={{ opacity: [1, 0.5, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                  >
-                    {Math.round(progressPercent)}%
-                  </motion.span>
+              <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    <span className="text-sm font-semibold text-emerald-600">You're in the queue</span>
+                  </div>
+                  <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Sequence number</p>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={status?.position}
+                      initial={{ y: -10, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      className="text-5xl md:text-6xl font-black text-slate-900 tracking-tight"
+                    >
+                      #{status?.position ?? "—"}
+                    </motion.div>
+                  </AnimatePresence>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">
+                    Group of {status?.groupSize || groupSize}
+                  </p>
                 </div>
-                <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-                  <motion.div 
-                    className="bg-gradient-to-r from-orange-400 to-orange-600 h-full rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${Math.max(5, progressPercent)}%` }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                  />
+
+                <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
+                  <p className="text-xs text-slate-400 font-medium">Token is static</p>
+                  <p className="text-xs text-[#FF9933] font-bold">Position fixed</p>
                 </div>
               </div>
             </motion.div>
 
-            {/* PEOPLE AHEAD & ETA */}
+            {/* Progress Bar */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white border border-slate-200 rounded-2xl p-6"
+            >
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-semibold text-slate-700">Queue progress</p>
+                <motion.span
+                  className="text-sm font-bold text-[#FF9933]"
+                  key={progressPercent}
+                  initial={{ scale: 1.3 }}
+                  animate={{ scale: 1 }}
+                >
+                  {Math.round(progressPercent)}%
+                </motion.span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-[#FF9933] to-[#FF9933]/70"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.max(5, progressPercent)}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                />
+              </div>
+            </motion.div>
+
+            {/* People Ahead & ETA */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* People Ahead Card */}
-              <motion.div 
-                className="bg-gradient-to-br from-slate-50 to-slate-100 border-2 border-slate-200 p-6 rounded-xl"
+              <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.25 }}
+                className="bg-white border border-slate-200 rounded-2xl p-6 hover:border-slate-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">People Ahead</p>
-                  <Users className="w-4 h-4 text-slate-500" />
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-[#FF9933]/10 border border-[#FF9933]/20 rounded-lg">
+                      <Users className="w-4 h-4 text-[#FF9933]" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">People ahead</span>
+                  </div>
+                  {isMoving && <PulseDot color="#22c55e" size={5} />}
                 </div>
-                <motion.div 
-                  className="text-4xl font-black text-slate-900"
-                  key={status?.peopleAhead}
-                  initial={{ y: -10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ type: "spring", stiffness: 100 }}
-                >
-                  {status?.peopleAhead ?? "—"}
-                </motion.div>
-                <p className="text-xs text-slate-500 mt-2">dynamically updating</p>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={status?.peopleAhead}
+                    initial={{ y: -8, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="text-4xl font-black text-slate-900 tracking-tight"
+                  >
+                    {status?.peopleAhead ?? "—"}
+                  </motion.div>
+                </AnimatePresence>
+                <p className="text-xs text-slate-400 mt-2 font-medium">dynamically updating</p>
               </motion.div>
 
-              {/* ETA Card */}
-              <motion.div 
-                className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 p-6 rounded-xl"
+              <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.25 }}
+                className="bg-white border border-slate-200 rounded-2xl p-6 hover:border-slate-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Expected Darshan</p>
-                  <Clock className="w-4 h-4 text-blue-600" />
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                      <Clock className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Est. action time</span>
+                  </div>
                 </div>
-                <motion.div 
-                  className="text-3xl font-black text-blue-900"
-                  key={status?.estimatedDarshanTime}
-                  initial={{ y: -10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ type: "spring", stiffness: 100 }}
-                >
-                  {status?.estimatedDarshanTime?.substring(0, 5) ?? "—"}
-                </motion.div>
-                <p className="text-xs text-blue-600 mt-2">
-                  {status?.estimatedWaitMinutes ? `${status.estimatedWaitMinutes} min` : "calculating"}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={status?.estimatedDarshanTime}
+                    initial={{ y: -8, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="text-4xl font-black text-slate-900 tracking-tight"
+                  >
+                    {status?.estimatedDarshanTime?.substring(0, 5) ?? "—"}
+                  </motion.div>
+                </AnimatePresence>
+                <p className="text-xs text-slate-400 mt-2 font-medium">
+                  {status?.estimatedWaitMinutes ? `~${status.estimatedWaitMinutes} min remaining` : "calculating..."}
                 </p>
               </motion.div>
             </div>
 
-            {/* MOVEMENT INDICATOR */}
-            <motion.div 
-              className="bg-gradient-to-r from-slate-900 to-slate-800 text-white px-6 py-4 rounded-xl flex items-center gap-3"
+            {/* Movement Indicator */}
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
+              transition={{ delay: 0.3 }}
+              className="flex items-center gap-3 px-5 py-3.5 bg-white border border-slate-200 rounded-2xl"
             >
-              <motion.div 
-                animate={{ scale: [1, 1.3, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <Activity className="w-5 h-5 text-orange-400" />
+              <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 2, repeat: Infinity }}>
+                <Activity className="w-4 h-4 text-[#FF9933]" />
               </motion.div>
-              <span className={`font-semibold ${movement.color}`}>{movement.text}</span>
+              <span className={`text-sm font-semibold ${movement.color}`}>{movement.text}</span>
             </motion.div>
 
-            {/* GROUP SIZE */}
-            <motion.div 
-              className="bg-slate-50 border-2 border-slate-200 p-4 rounded-xl text-center"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
-            >
-              <p className="text-sm text-slate-600 font-medium">
-                👥 <span className="font-bold text-slate-900">{status?.groupSize || groupSize}</span> {status?.groupSize === 1 ? "pilgrim" : "pilgrims"} in your group
-              </p>
-            </motion.div>
-
-            {/* LEAVE QUEUE BUTTON */}
+            {/* Leave Queue */}
             <motion.button
               onClick={handleLeave}
               disabled={loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full bg-red-50 hover:bg-red-100 border-2 border-red-300 text-red-600 hover:text-red-700 px-6 py-4 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.35 }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-white border border-red-200 hover:border-red-300 hover:bg-red-50 rounded-2xl text-red-500 hover:text-red-600 font-semibold text-sm transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <AlertCircle className="w-5 h-5" />
+              <X className="w-4 h-4" />
               {loading ? "Leaving..." : "Leave Queue"}
             </motion.button>
 
-            {/* REAL-TIME INDICATOR */}
-            <motion.div 
-              className="text-center text-xs text-slate-500 flex items-center justify-center gap-2"
+            {/* Real-time Footer */}
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
+              transition={{ delay: 0.4 }}
+              className="flex items-center justify-center gap-2 text-xs text-slate-400"
             >
-              <motion.div 
-                className="w-2 h-2 bg-green-500 rounded-full"
-                animate={{ opacity: [1, 0.3, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-              Real-time tracking active
+              <PulseDot color="#22c55e" size={4} />
+              <span>Real-time tracking active · WebSocket connected</span>
             </motion.div>
           </motion.div>
         )}
