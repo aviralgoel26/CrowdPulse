@@ -4,6 +4,7 @@ import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.service.CommunityService;
 
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/crowdpulse/community")
@@ -25,4 +26,10 @@ public class CommunityController {
     public CommunityUpdate getLatest(@PathVariable Long placeId) {
         return service.getLatestUpdate(placeId);
     }
+    @GetMapping("/history/{placeId}")
+public List<CommunityUpdate> history(
+        @PathVariable Long placeId
+) {
+    return service.getRecentUpdates(placeId);
+}
 }

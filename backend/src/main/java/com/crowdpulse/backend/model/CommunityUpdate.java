@@ -28,5 +28,10 @@ public class CommunityUpdate {
     @Column(columnDefinition = "TEXT")
     private String note;
 
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+    }
+
     private LocalDateTime createdAt;
 }

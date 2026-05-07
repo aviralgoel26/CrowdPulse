@@ -12,4 +12,7 @@ public interface QueueService {
     Map<String, Object> joinQueue(Long placeId, String userId, int groupSize);
 
     Map<String, Object> getStatus(Long placeId, String userId);
+
+    // 🔹 NEW: Leave Queue Properly
+    Map<String, Object> leaveQueue(Long placeId, String userId);
 }

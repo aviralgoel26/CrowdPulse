@@ -50,11 +50,16 @@ public String heartbeat(@RequestParam Long placeId,
     redisTemplate.opsForValue().set(
             key,
             String.valueOf(System.currentTimeMillis()),
-            java.time.Duration.ofSeconds(40)
+            java.time.Duration.ofSeconds(60)  // ✅ INCREASED: Match scheduler grace period (60s)
     );
 
     return "Heartbeat updated";
 }
 
-    
+    // 🚪 LEAVE QUEUE (NEW - CRITICAL FIX)
+    @PostMapping("/leave/{placeId}")
+    public Map<String, Object> leaveQueue(@PathVariable Long placeId,
+                                          @RequestParam String userId) {
+        return queueService.leaveQueue(placeId, userId);
+    }
 }
