@@ -42,8 +42,7 @@ public Map<String, Object> getPrediction(Long placeId) {
     }
 
     // 🔥 CURRENT WAIT
-    int currentWait =
-            data.get(0).getWaitTime();
+    int currentWait = data.get(0).getWaitTime();
 
     // 🔥 FUTURE HOURLY FORECAST
     List<Map<String, Object>> timeline =
@@ -147,23 +146,17 @@ public Map<String, Object> getPrediction(Long placeId) {
         alert = "MODERATE";
     }
 
-    return Map.of(
+    Map<String, Object> result = new HashMap<>();
+    result.put("currentWait", currentWait);
+    result.put("bestTime", best != null ? best.get("time") : "N/A");
+    result.put("bestWait", best != null ? best.get("wait") : 0);
+    result.put("peakTime", peak != null ? peak.get("time") : "N/A");
+    result.put("peakWait", peak != null ? peak.get("wait") : 0);
+    result.put("trend", trend);
+    result.put("recommendation", recommendation);
+    result.put("timeline", timeline);
+    result.put("alert", alert);
 
-            "currentWait", currentWait,
-
-            "bestTime", best.get("time"),
-            "bestWait", best.get("wait"),
-
-            "peakTime", peak.get("time"),
-            "peakWait", peak.get("wait"),
-
-            "trend", trend,
-
-            "recommendation", recommendation,
-
-            "timeline", timeline,
-
-            "alert", alert
-    );
+    return result;
 }
 }

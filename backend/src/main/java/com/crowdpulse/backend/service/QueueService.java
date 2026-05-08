@@ -1,6 +1,7 @@
 package com.crowdpulse.backend.service;
 
 import com.crowdpulse.backend.dto.WaitTimeResponse;
+import java.util.List;
 import java.util.Map;
 
 public interface QueueService {
@@ -15,4 +16,7 @@ public interface QueueService {
 
     // 🔹 NEW: Leave Queue Properly
     Map<String, Object> leaveQueue(Long placeId, String userId);
+
+    // 🔹 NEW: Historical time-series for charting
+    List<Map<String, Object>> getTimeSeries(Long placeId);
 }

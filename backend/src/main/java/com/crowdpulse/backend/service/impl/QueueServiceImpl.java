@@ -3,6 +3,8 @@ package com.crowdpulse.backend.service.impl;
 import com.crowdpulse.backend.dto.WaitTimeResponse;
 import com.crowdpulse.backend.dto.QueueStatusResponse;
 import com.crowdpulse.backend.repository.PlaceRepository;
+import com.crowdpulse.backend.repository.QueueMetricsRepository;
+import com.crowdpulse.backend.model.QueueMetrics;
 import com.crowdpulse.backend.service.QueueService;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -11,10 +13,11 @@ import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.model.Place;
 import com.crowdpulse.backend.service.CommunityService;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class QueueServiceImpl implements QueueService {
@@ -22,13 +25,16 @@ public class QueueServiceImpl implements QueueService {
     private final PlaceRepository placeRepository;
     private final StringRedisTemplate redisTemplate;
     private final CommunityService communityService;
+    private final QueueMetricsRepository queueMetricsRepository;
 
     public QueueServiceImpl(PlaceRepository placeRepository,
                             StringRedisTemplate redisTemplate,
-                            CommunityService communityService) {
+                            CommunityService communityService,
+                            QueueMetricsRepository queueMetricsRepository) {
         this.placeRepository = placeRepository;
         this.redisTemplate = redisTemplate;
-        this.communityService= communityService;
+        this.communityService = communityService;
+        this.queueMetricsRepository = queueMetricsRepository;
     }
 
     // 🔑 Redis Queue Key
@@ -320,6 +326,16 @@ public class QueueServiceImpl implements QueueService {
 
         String key = getQueueKey(placeId);
 
+        // 🔹 Get place config
+        Place place = getPlaceConfig(placeId);
+        String queueStatus = (place != null) ? place.getQueueStatus() : "ACTIVE";
+
+        // 🔹 Check community status override
+        CommunityUpdate update = communityService.getLatestUpdate(placeId);
+        if (update != null && update.getQueueStatus() != null) {
+            queueStatus = update.getQueueStatus();
+        }
+
         // 🔹 Get Redis queue data
         List<String> queue = redisTemplate.opsForList().range(key, 0, -1);
 
@@ -334,7 +350,6 @@ public class QueueServiceImpl implements QueueService {
         }
 
         // 🔹 Get community data
-        CommunityUpdate update = communityService.getLatestUpdate(placeId);
         int communityPeople = (update != null && update.getReportedQueueLength() != null)
                 ? update.getReportedQueueLength()
                 : 0;
@@ -342,8 +357,6 @@ public class QueueServiceImpl implements QueueService {
         // 🔹 Use MAX of both sources (hybrid estimate)
         int basePeople = Math.max(redisPeople, communityPeople);
 
-        // 🔹 Get place config
-        Place place = getPlaceConfig(placeId);
         double scalingFactor = (place != null && place.getScalingFactor() != null)
                 ? place.getScalingFactor()
                 : 1.0;
@@ -364,9 +377,6 @@ public class QueueServiceImpl implements QueueService {
         double waitTime = (correctedPeople > 0 && effectiveThroughput > 0) 
                 ? (correctedPeople / effectiveThroughput) 
                 : 0;
-
-        // 🔹 Get queue status
-        String queueStatus = (place != null) ? place.getQueueStatus() : "ACTIVE";
 
         return new WaitTimeResponse(
                 (int) Math.ceil(waitTime),
@@ -414,5 +424,49 @@ public class QueueServiceImpl implements QueueService {
                     "message", "Error leaving queue: " + e.getMessage()
             );
         }
+    }
+
+    // ==============================
+    // 📈 TIME SERIES (Historical Hourly Data)
+    // ==============================
+    @Override
+    public List<Map<String, Object>> getTimeSeries(Long placeId) {
+        // Fetch all metrics from today (start of day)
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        List<QueueMetrics> metrics = queueMetricsRepository
+                .findByPlaceIdAndTimestampAfterOrderByTimestampAsc(placeId, startOfDay);
+
+        if (metrics.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Aggregate by hour: compute average waitTime per hour
+        Map<Integer, List<QueueMetrics>> byHour = metrics.stream()
+                .collect(Collectors.groupingBy(m -> m.getTimestamp().getHour()));
+
+        List<Map<String, Object>> timeSeries = new ArrayList<>();
+        for (Map.Entry<Integer, List<QueueMetrics>> entry : new TreeMap<>(byHour).entrySet()) {
+            int hour = entry.getKey();
+            List<QueueMetrics> hourMetrics = entry.getValue();
+
+            double avgWait = hourMetrics.stream()
+                    .mapToInt(QueueMetrics::getWaitTime)
+                    .average()
+                    .orElse(0);
+
+            double avgPeople = hourMetrics.stream()
+                    .mapToInt(QueueMetrics::getCorrectedPeople)
+                    .average()
+                    .orElse(0);
+
+            Map<String, Object> point = new HashMap<>();
+            point.put("time", String.format("%02d:00", hour));
+            point.put("wait", (int) Math.round(avgWait));
+            point.put("people", (int) Math.round(avgPeople));
+            point.put("samples", hourMetrics.size());
+            timeSeries.add(point);
+        }
+
+        return timeSeries;
     }
 }

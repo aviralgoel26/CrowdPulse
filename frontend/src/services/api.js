@@ -95,3 +95,14 @@ export const getCommunityHistory = async (placeId) => {
 
   return res.json();
 };
+
+// ✅ Get historical time-series data (hourly aggregated)
+export const getTimeSeries = async (placeId) => {
+  try {
+    const res = await fetch(`${BASE_URL}/queue/timeseries/${placeId}`);
+    return await res.json();
+  } catch (err) {
+    console.error("Error fetching time series", err);
+    return [];
+  }
+};

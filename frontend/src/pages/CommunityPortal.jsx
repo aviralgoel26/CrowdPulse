@@ -17,6 +17,9 @@ import {
   MessageSquare,
   Radio,
   ChevronDown,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 
 const statusConfig = {
@@ -33,6 +36,13 @@ export default function CommunityPortal() {
   const [latest, setLatest] = useState(null);
   const [history, setHistory] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Edit mode state ──
+  const [editing, setEditing] = useState(false);
+  const [editQueueLength, setEditQueueLength] = useState("");
+  const [editThroughput, setEditThroughput] = useState("");
+  const [editStatus, setEditStatus] = useState("ACTIVE");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const loadLatest = async () => {
@@ -79,10 +89,50 @@ export default function CommunityPortal() {
     }
   };
 
-  const sc = statusConfig[status] || statusConfig.ACTIVE;
+  // ── Start editing: populate fields from current latest ──
+  const startEditing = () => {
+    if (!latest) return;
+    setEditQueueLength(latest.reportedQueueLength?.toString() || "");
+    setEditThroughput(latest.throughputPerMin?.toString() || "");
+    setEditStatus(latest.queueStatus || "ACTIVE");
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+
+  // ── Save edited values as a new community update ──
+  const saveEdit = async () => {
+    setSaving(true);
+    const payload = {
+      placeId: Number(placeId),
+      reportedQueueLength: Number(editQueueLength),
+      throughputPerMin: Number(editThroughput),
+      queueStatus: editStatus,
+      note: "Updated via edit",
+    };
+
+    try {
+      await submitCommunityUpdate(payload);
+      const latestData = await getLatestCommunityUpdate(placeId);
+      setLatest(latestData);
+      const historyData = await getCommunityHistory(placeId);
+      setHistory(historyData);
+      setEditing(false);
+    } catch (err) {
+      console.error(err);
+      alert("❌ Failed to save edit");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const inputCls =
     "w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 text-sm font-medium focus:outline-none focus:border-[#FF9933]/50 focus:ring-1 focus:ring-[#FF9933]/20 transition-all";
+
+  const editInputCls =
+    "w-full px-3 py-2 bg-white border border-[#FF9933]/30 rounded-lg text-slate-800 text-sm font-bold focus:outline-none focus:border-[#FF9933] focus:ring-2 focus:ring-[#FF9933]/20 transition-all";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -112,41 +162,125 @@ export default function CommunityPortal() {
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-white border border-slate-200 rounded-2xl p-6"
               >
-                <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-5 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#FF9933]" />
-                  Current Operational State
-                </h2>
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-[#FF9933]" />
+                    Current Operational State
+                  </h2>
+
+                  {/* ── EDIT / SAVE / CANCEL BUTTONS ── */}
+                  {!editing ? (
+                    <motion.button
+                      onClick={startEditing}
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition-all duration-200"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit
+                    </motion.button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <motion.button
+                        onClick={saveEdit}
+                        disabled={saving}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition-all duration-200 disabled:opacity-50"
+                      >
+                        {saving ? (
+                          <motion.div
+                            className="w-3.5 h-3.5 border-2 border-emerald-500 border-t-transparent rounded-full"
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                          />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        Save
+                      </motion.button>
+                      <motion.button
+                        onClick={cancelEditing}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-all duration-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Cancel
+                      </motion.button>
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  {/* Queue Length */}
+                  <div className={`rounded-xl p-4 border transition-all duration-200 ${editing ? "bg-[#FF9933]/5 border-[#FF9933]/20" : "bg-slate-50 border-slate-200"}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <Users className="w-3.5 h-3.5 text-[#FF9933]" />
                       <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Queue Length</span>
                     </div>
-                    <p className="text-2xl font-bold text-slate-900">{latest.reportedQueueLength}</p>
+                    {editing ? (
+                      <input
+                        type="number"
+                        value={editQueueLength}
+                        onChange={(e) => setEditQueueLength(e.target.value)}
+                        className={editInputCls}
+                        placeholder="e.g. 500"
+                        autoFocus
+                      />
+                    ) : (
+                      <p className="text-2xl font-bold text-slate-900">{latest.reportedQueueLength}</p>
+                    )}
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  {/* Throughput */}
+                  <div className={`rounded-xl p-4 border transition-all duration-200 ${editing ? "bg-[#FF9933]/5 border-[#FF9933]/20" : "bg-slate-50 border-slate-200"}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <Zap className="w-3.5 h-3.5 text-blue-500" />
                       <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Throughput</span>
                     </div>
-                    <p className="text-2xl font-bold text-slate-900">{latest.throughputPerMin}<span className="text-sm text-slate-400 ml-1">/min</span></p>
+                    {editing ? (
+                      <input
+                        type="number"
+                        value={editThroughput}
+                        onChange={(e) => setEditThroughput(e.target.value)}
+                        className={editInputCls}
+                        placeholder="e.g. 50"
+                      />
+                    ) : (
+                      <p className="text-2xl font-bold text-slate-900">{latest.throughputPerMin}<span className="text-sm text-slate-400 ml-1">/min</span></p>
+                    )}
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  {/* Status */}
+                  <div className={`rounded-xl p-4 border transition-all duration-200 ${editing ? "bg-[#FF9933]/5 border-[#FF9933]/20" : "bg-slate-50 border-slate-200"}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <Activity className="w-3.5 h-3.5 text-emerald-500" />
                       <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Status</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${statusConfig[latest.queueStatus]?.dot || "bg-slate-400"}`} />
-                      <p className={`text-lg font-bold ${statusConfig[latest.queueStatus]?.color || "text-slate-600"}`}>
-                        {latest.queueStatus}
-                      </p>
-                    </div>
+                    {editing ? (
+                      <div className="relative">
+                        <select
+                          value={editStatus}
+                          onChange={(e) => setEditStatus(e.target.value)}
+                          className={`${editInputCls} appearance-none pr-8 cursor-pointer`}
+                        >
+                          <option value="ACTIVE">Active</option>
+                          <option value="PAUSED">Paused</option>
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${statusConfig[latest.queueStatus]?.dot || "bg-slate-400"}`} />
+                        <p className={`text-lg font-bold ${statusConfig[latest.queueStatus]?.color || "text-slate-600"}`}>
+                          {latest.queueStatus}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
+                  {/* Note */}
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <MessageSquare className="w-3.5 h-3.5 text-slate-400" />

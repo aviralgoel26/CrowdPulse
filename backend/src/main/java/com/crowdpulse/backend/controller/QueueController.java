@@ -40,6 +40,12 @@ public class QueueController {
         return queueService.calculateWaitTime(placeId);
     }
 
+    // 📈 TIME SERIES (Historical hourly data for charting)
+    @GetMapping("/timeseries/{placeId}")
+    public List<Map<String, Object>> getTimeSeries(@PathVariable Long placeId) {
+        return queueService.getTimeSeries(placeId);
+    }
+
     // 🧹 HEARTBEAT
     @PostMapping("/heartbeat")
 public String heartbeat(@RequestParam Long placeId,

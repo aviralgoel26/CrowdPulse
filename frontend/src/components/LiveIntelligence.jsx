@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
-  getWaitTime
+  getWaitTime,
+  getTimeSeries
 } from "../services/api";
 
 import CrowdChart from "./CrowdChart";
@@ -136,6 +137,7 @@ export default function LiveIntelligence({ placeId }) {
   const [loading, setLoading] = useState(true);
   const [waitData, setWaitData] = useState(null);
   const [prediction, setPrediction] = useState(null);
+  const [timeSeries, setTimeSeries] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const refreshCountRef = useRef(0);
 
@@ -161,11 +163,15 @@ export default function LiveIntelligence({ placeId }) {
     try {
       if (refreshCountRef.current === 0) setLoading(true);
 
-      const wait = await getWaitTime(placeId);
-      const predData = await getPrediction(placeId);
+      const [wait, predData, tsData] = await Promise.all([
+        getWaitTime(placeId),
+        getPrediction(placeId),
+        getTimeSeries(placeId)
+      ]);
 
       setWaitData(wait);
       setPrediction(predData);
+      setTimeSeries(tsData || []);
       setLastUpdated(new Date());
       refreshCountRef.current += 1;
     } catch (err) {
@@ -483,7 +489,10 @@ export default function LiveIntelligence({ placeId }) {
           </div>
         </div>
 
-        <CrowdChart data={prediction?.timeline || []} />
+        <CrowdChart
+          data={prediction?.timeline || []}
+          timeSeriesData={timeSeries}
+        />
       </IntelCard>
     </div>
   );
