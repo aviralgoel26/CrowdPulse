@@ -1,12 +1,20 @@
 import { useEffect, useState, useRef } from "react";
 import {
   getWaitTime,
-  getTimeSeries
+  getPrediction
 } from "../services/api";
 
 import CrowdChart from "./CrowdChart";
-import { getPrediction } from "../services/api";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ─── Wait Time Formatter (min → h + m) ───────────────────────
+const formatWaitTime = (minutes) => {
+  if (minutes == null || minutes <= 0) return "0 min";
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+};
 import {
   Users,
   Clock,
@@ -137,7 +145,6 @@ export default function LiveIntelligence({ placeId }) {
   const [loading, setLoading] = useState(true);
   const [waitData, setWaitData] = useState(null);
   const [prediction, setPrediction] = useState(null);
-  const [timeSeries, setTimeSeries] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const refreshCountRef = useRef(0);
 
@@ -163,15 +170,13 @@ export default function LiveIntelligence({ placeId }) {
     try {
       if (refreshCountRef.current === 0) setLoading(true);
 
-      const [wait, predData, tsData] = await Promise.all([
+      const [wait, predData] = await Promise.all([
         getWaitTime(placeId),
-        getPrediction(placeId),
-        getTimeSeries(placeId)
+        getPrediction(placeId)
       ]);
 
       setWaitData(wait);
       setPrediction(predData);
-      setTimeSeries(tsData || []);
       setLastUpdated(new Date());
       refreshCountRef.current += 1;
     } catch (err) {
@@ -309,8 +314,7 @@ export default function LiveIntelligence({ placeId }) {
             >
               {waitData ? (
                 <>
-                  {waitData.waitMinutes}
-                  <span className="text-xl text-slate-400 font-semibold ml-2">min</span>
+                  {formatWaitTime(waitData.waitMinutes)}
                 </>
               ) : (
                 "--"
@@ -345,16 +349,14 @@ export default function LiveIntelligence({ placeId }) {
             </h2>
           </div>
 
-          <p className="text-sm text-slate-500 font-medium">
-            live operational status
-          </p>
+    
 
           {waitData && (
             <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-4">
               <div className="flex items-center gap-1.5">
                 <Timer className="w-3.5 h-3.5 text-slate-400" />
                 <span className="text-xs text-slate-500">
-                  Avg {Math.round(waitData.waitMinutes / Math.max(waitData.peopleAhead, 1))} min/person
+                  Avg {formatWaitTime(Math.round(waitData.waitMinutes / Math.max(waitData.peopleAhead, 1)))}/person
                 </span>
               </div>
             </div>
@@ -397,8 +399,7 @@ export default function LiveIntelligence({ placeId }) {
                   <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Now</span>
                 </div>
                 <p className="text-2xl font-bold text-slate-900">
-                  {prediction.currentWait}
-                  <span className="text-sm text-slate-400 font-medium ml-1">min</span>
+                  {formatWaitTime(prediction.currentWait)}
                 </p>
               </div>
 
@@ -410,7 +411,7 @@ export default function LiveIntelligence({ placeId }) {
                 <p className="text-2xl font-bold text-emerald-600">
                   {formatTime(prediction?.bestTime) || "--"}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">~{prediction.bestWait} min wait</p>
+                <p className="text-xs text-slate-500 mt-1">~{formatWaitTime(prediction.bestWait)} wait</p>
               </div>
 
               <div className="bg-red-50/50 border border-red-200 rounded-xl p-4">
@@ -421,7 +422,7 @@ export default function LiveIntelligence({ placeId }) {
                 <p className="text-2xl font-bold text-red-500">
                   {formatTime(prediction.peakTime)}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">~{prediction.peakWait} min wait</p>
+                <p className="text-xs text-slate-500 mt-1">~{formatWaitTime(prediction.peakWait)} wait</p>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
@@ -491,7 +492,8 @@ export default function LiveIntelligence({ placeId }) {
 
         <CrowdChart
           data={prediction?.timeline || []}
-          timeSeriesData={timeSeries}
+          communityData={prediction?.communityTimeline || []}
+          currentHour={prediction?.currentHour}
         />
       </IntelCard>
     </div>

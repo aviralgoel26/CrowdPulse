@@ -3,6 +3,7 @@ package com.crowdpulse.backend.service.impl;
 import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.repository.CommunityUpdateRepository;
 import com.crowdpulse.backend.service.CommunityService;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -43,4 +44,9 @@ public List<CommunityUpdate> getRecentUpdates(Long placeId) {
     return repository
             .findTop10ByPlaceIdOrderByCreatedAtDesc(placeId);
 }
-}
+
+    @Override
+    public List<CommunityUpdate> getUpdatesAfter(Long placeId, LocalDateTime after) {
+        return repository.findByPlaceIdAndCreatedAtAfterOrderByCreatedAtAsc(placeId, after);
+    }
+}

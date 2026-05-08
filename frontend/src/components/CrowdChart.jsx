@@ -12,32 +12,32 @@ import {
   ReferenceLine
 } from "recharts";
 
-// Merge historical + forecast into a single chart-friendly array
-function mergeTimeSeries(historical, forecast) {
+// Merge forecast (historical) + community (actual) into a single chart-friendly array
+function mergeTimeSeries(forecast, community) {
   const map = new Map();
 
-  // Add historical data points
-  if (historical && historical.length > 0) {
-    historical.forEach((point) => {
+  // Add forecast data points (historical + prediction)
+  if (forecast && forecast.length > 0) {
+    forecast.forEach((point) => {
       map.set(point.time, {
         time: point.time,
-        historical: point.wait,
-        forecast: null,
+        forecast: point.wait,
+        community: null,
       });
     });
   }
 
-  // Add forecast data points
-  if (forecast && forecast.length > 0) {
-    forecast.forEach((point) => {
+  // Add community data points (actual ground truth)
+  if (community && community.length > 0) {
+    community.forEach((point) => {
       const existing = map.get(point.time);
       if (existing) {
-        existing.forecast = point.wait;
+        existing.community = point.wait;
       } else {
         map.set(point.time, {
           time: point.time,
-          historical: null,
-          forecast: point.wait,
+          forecast: null,
+          community: point.wait,
         });
       }
     });
@@ -72,22 +72,22 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-export default function CrowdChart({ data, timeSeriesData }) {
-  const merged = mergeTimeSeries(timeSeriesData, data);
+export default function CrowdChart({ data, communityData, currentHour }) {
+  const merged = mergeTimeSeries(data, communityData);
 
   // If no merged data, show a default fallback
   const chartData =
     merged && merged.length > 0
       ? merged
       : [
-          { time: "10:00", historical: 20, forecast: 22 },
-          { time: "12:00", historical: 45, forecast: 50 },
-          { time: "14:00", historical: 60, forecast: 55 },
-          { time: "16:00", historical: 35, forecast: 40 },
+          { time: "10:00", forecast: 20, community: 22 },
+          { time: "12:00", forecast: 45, community: 50 },
+          { time: "14:00", forecast: 60, community: 55 },
+          { time: "16:00", forecast: 35, community: 40 },
         ];
 
-  const hasHistorical = chartData.some((d) => d.historical !== null);
   const hasForecast = chartData.some((d) => d.forecast !== null);
+  const hasCommunity = chartData.some((d) => d.community !== null);
 
   return (
     <div className="w-full h-[350px] relative">
@@ -130,6 +130,23 @@ export default function CrowdChart({ data, timeSeriesData }) {
             }}
           />
 
+          {/* NOW Reference Line */}
+          {currentHour && (
+            <ReferenceLine
+              x={currentHour}
+              stroke="#FF9933"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              label={{
+                value: "NOW",
+                position: "top",
+                fill: "#FF9933",
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            />
+          )}
+
           {/* Tooltip */}
           <Tooltip content={<CustomTooltip />} />
 
@@ -139,22 +156,22 @@ export default function CrowdChart({ data, timeSeriesData }) {
             wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
           />
 
-          {/* Historical Area + Line (solid orange) */}
-          {hasHistorical && (
+          {/* Community Area + Line (solid orange) — Actual ground truth */}
+          {hasCommunity && (
             <>
               <defs>
-                <linearGradient id="historicalGradient" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="communityGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#FF9933" stopOpacity={0.2} />
                   <stop offset="95%" stopColor="#FF9933" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <Area
                 type="monotone"
-                dataKey="historical"
-                name="Actual (Today)"
+                dataKey="community"
+                name="Community (Actual)"
                 stroke="#FF9933"
                 strokeWidth={3}
-                fill="url(#historicalGradient)"
+                fill="url(#communityGradient)"
                 dot={{ r: 4, fill: "#FF9933", stroke: "#fff", strokeWidth: 2 }}
                 activeDot={{ r: 7, fill: "#FF9933", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls
@@ -162,7 +179,7 @@ export default function CrowdChart({ data, timeSeriesData }) {
             </>
           )}
 
-          {/* Forecast Line (dashed blue) */}
+          {/* Forecast Line (dashed blue) — Historical data + prediction */}
           {hasForecast && (
             <>
               <defs>
@@ -174,7 +191,7 @@ export default function CrowdChart({ data, timeSeriesData }) {
               <Area
                 type="monotone"
                 dataKey="forecast"
-                name="Forecast"
+                name="Forecast (Historical)"
                 stroke="#3b82f6"
                 strokeWidth={2}
                 strokeDasharray="6 4"

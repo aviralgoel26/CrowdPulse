@@ -21,6 +21,7 @@ public class QueueMetrics {
     private int correctedPeople;
 
     private double throughput;
+    private double efficiencyFactor;
     private int waitTime;
 
     // Getters & Setters
@@ -47,6 +48,9 @@ public class QueueMetrics {
 
     public double getThroughput() { return throughput; }
     public void setThroughput(double throughput) { this.throughput = throughput; }
+
+    public double getEfficiencyFactor() { return efficiencyFactor; }
+    public void setEfficiencyFactor(double efficiencyFactor) { this.efficiencyFactor = efficiencyFactor; }
 
     public int getWaitTime() { return waitTime; }
     public void setWaitTime(int waitTime) { this.waitTime = waitTime; }

@@ -19,6 +19,15 @@ import {
 import { joinQueue, getQueueStatus, leaveQueue } from "../services/api";
 import { connectSocket, disconnectSocket } from "../services/socket";
 
+// ─── Wait Time Formatter (min → h + m) ───────────────────────
+const formatWaitTime = (minutes) => {
+  if (minutes == null || minutes <= 0) return "0 min";
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+};
+
 // ── Reusable Pulse Dot ──
 const PulseDot = ({ color = "#22c55e", size = 8 }) => (
   <span className="relative inline-flex items-center justify-center" style={{ width: size * 2, height: size * 2 }}>
@@ -508,7 +517,7 @@ export default function VirtualQueue({ placeId }) {
                   </motion.div>
                 </AnimatePresence>
                 <p className="text-xs text-slate-400 mt-2 font-medium">
-                  {status?.estimatedWaitMinutes ? `~${status.estimatedWaitMinutes} min remaining` : "calculating..."}
+                  {status?.estimatedWaitMinutes ? `~${formatWaitTime(status.estimatedWaitMinutes)} remaining` : "calculating..."}
                 </p>
               </motion.div>
             </div>

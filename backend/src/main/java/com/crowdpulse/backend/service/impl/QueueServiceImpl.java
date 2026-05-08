@@ -52,9 +52,49 @@ public class QueueServiceImpl implements QueueService {
         return placeRepository.findById(placeId).orElse(null);
     }
 
-    // 🔧 Calculate Throughput for a Place
+    // ══════════════════════════════════════════════════════════════
+    // 🔧 QUEUE EFFICIENCY COEFFICIENT (Dynamic, Adaptive)
+    // ══════════════════════════════════════════════════════════════
+    // This replaces the hardcoded 0.35 multiplier with a congestion-aware
+    // damping factor. Theoretical throughput is reduced to simulate real-world
+    // operational inefficiencies: crowd clustering, security pauses, darshan
+    // delays, and non-linear pedestrian movement.
+    // ══════════════════════════════════════════════════════════════
+
+    private static final double EFFICIENCY_LOW_TRAFFIC    = 0.55; // 0–50 people
+    private static final double EFFICIENCY_NORMAL         = 0.45; // 51–200 people
+    private static final double EFFICIENCY_MODERATE       = 0.35; // 201–500 people
+    private static final double EFFICIENCY_HEAVY          = 0.25; // 501–1000 people
+    private static final double EFFICIENCY_EXTREME        = 0.15; // 1000+ people
+
+    /**
+     * Calculates the Queue Efficiency Coefficient based on current crowd density.
+     * This accounts for real-world operational inefficiencies such as:
+     * - Crowd clustering and batch movement
+     * - Security checkpoints and verification pauses
+     * - Darshan ritual delays
+     * - Non-linear pedestrian flow
+     * - Bottlenecks at entry/exit points
+     */
+    private double calculateEfficiencyFactor(int correctedPeople) {
+        if (correctedPeople <= 50)   return EFFICIENCY_LOW_TRAFFIC;
+        if (correctedPeople <= 200)  return EFFICIENCY_NORMAL;
+        if (correctedPeople <= 500)  return EFFICIENCY_MODERATE;
+        if (correctedPeople <= 1000) return EFFICIENCY_HEAVY;
+        return EFFICIENCY_EXTREME;
+    }
+
+    // 🔧 Calculate Throughput for a Place (Community-aware)
     private double calculateThroughput(Long placeId) {
         Place place = getPlaceConfig(placeId);
+
+        // 🔥 Community throughput takes priority (freshest ground-truth)
+        CommunityUpdate communityUpdate = communityService.getLatestUpdate(placeId);
+        if (communityUpdate != null && communityUpdate.getThroughputPerMin() != null
+                && communityUpdate.getThroughputPerMin() > 0) {
+            return communityUpdate.getThroughputPerMin();
+        }
+
         if (place == null || place.getBaseThroughput() == null) {
             return 30.0; // Default throughput
         }
@@ -272,7 +312,8 @@ public class QueueServiceImpl implements QueueService {
         // STEP 4: CALCULATE DYNAMIC THROUGHPUT & ELAPSED TIME CORRECTION
         // ========================================
         double throughput = calculateThroughput(placeId);
-        double effectiveThroughput = throughput * 0.35; // realistic simulation
+        double queueEfficiencyFactor = calculateEfficiencyFactor(virtualPeopleAhead);
+        double effectiveThroughput = throughput * queueEfficiencyFactor;
 
         long now = System.currentTimeMillis();
         double elapsedMinutes = (now - userJoinTime) / (1000.0 * 60.0);
@@ -368,9 +409,10 @@ public class QueueServiceImpl implements QueueService {
         // 🔥 Apply heuristic corrections
         double correctedPeople = (basePeople * scalingFactor) + adminOffset;
 
-        // 🔹 Calculate throughput
+        // 🔹 Calculate throughput (community-aware via calculateThroughput)
         double throughput = calculateThroughput(placeId);
-        double effectiveThroughput = throughput * 0.35; // realistic simulation
+        double queueEfficiencyFactor = calculateEfficiencyFactor((int) Math.ceil(correctedPeople));
+        double effectiveThroughput = throughput * queueEfficiencyFactor;
 
         // 🔹 Calculate wait time
         double avgGroupSize = 1.5;
@@ -383,7 +425,8 @@ public class QueueServiceImpl implements QueueService {
                 (int) Math.ceil(correctedPeople),
                 avgGroupSize,
                 throughput,
-                queueStatus
+                queueStatus,
+                queueEfficiencyFactor
         );
     }
 

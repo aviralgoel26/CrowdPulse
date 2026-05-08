@@ -132,12 +132,20 @@ public void processQueue() {
 
         int correctedPeople = (int) ((basePeople * scalingFactor) + adminOffset);
 
-        // 6. ⏱️ CALCULATE WAIT TIME
+        // 6. ⏱️ CALCULATE WAIT TIME (Dynamic Queue Efficiency Coefficient)
         double throughput = (update != null && update.getThroughputPerMin() != null) 
                 ? update.getThroughputPerMin() 
                 : (place != null && place.getBaseThroughput() != null ? place.getBaseThroughput() : 30.0);
-                
-        double effectiveThroughput = throughput * 0.35; // realistic simulation
+
+        // 🔥 Dynamic Queue Efficiency Coefficient based on congestion
+        double queueEfficiencyFactor;
+        if (correctedPeople <= 50)        queueEfficiencyFactor = 0.55;
+        else if (correctedPeople <= 200)  queueEfficiencyFactor = 0.45;
+        else if (correctedPeople <= 500)  queueEfficiencyFactor = 0.35;
+        else if (correctedPeople <= 1000) queueEfficiencyFactor = 0.25;
+        else                              queueEfficiencyFactor = 0.15;
+
+        double effectiveThroughput = throughput * queueEfficiencyFactor;
         double avgGroupSize = 1.5;
         int waitTime = (correctedPeople > 0 && effectiveThroughput > 0) 
                 ? (int) Math.ceil(correctedPeople / effectiveThroughput) 
@@ -153,6 +161,7 @@ public void processQueue() {
             metrics.setTotalPeople(totalPeople);
             metrics.setCorrectedPeople(correctedPeople);
             metrics.setThroughput(throughput);
+            metrics.setEfficiencyFactor(queueEfficiencyFactor);
             metrics.setWaitTime(waitTime);
 
             queueMetricsRepository.save(metrics);
@@ -169,8 +178,8 @@ public void processQueue() {
                     : "ACTIVE";
 
             String broadcastMessage = String.format(
-                "{\"placeId\":%d,\"timestamp\":%d,\"totalWaitMinutes\":%d,\"totalPeople\":%d,\"queueStatus\":\"%s\",\"throughput\":%.2f}",
-                placeId, System.currentTimeMillis(), waitTime, correctedPeople, queueStatus, (double)throughput
+                "{\"placeId\":%d,\"timestamp\":%d,\"totalWaitMinutes\":%d,\"totalPeople\":%d,\"queueStatus\":\"%s\",\"throughput\":%.2f,\"efficiencyFactor\":%.2f}",
+                placeId, System.currentTimeMillis(), waitTime, correctedPeople, queueStatus, (double)throughput, queueEfficiencyFactor
             );
 
             messagingTemplate.convertAndSend("/topic/queue/" + placeId, broadcastMessage);
