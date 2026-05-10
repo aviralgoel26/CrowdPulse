@@ -1,23 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { MapPin, ArrowRight } from "lucide-react";
+import { getImageForPlace, handleImageError } from "../services/imageUtils";
 
 const PlaceCard = ({ place }) => {
   const navigate = useNavigate();
 
-  // Parse images from backend JSON
-  let images = [];
-  try {
-    images = JSON.parse(place.images || "[]");
-  } catch {
-    images = [];
-  }
+  // Get image from centralized image utility
+  const image = getImageForPlace(place.name, place.id);
 
-  const image =
-    images.length > 0
-      ? images[0].startsWith("http")
-        ? images[0]
-        : `http://localhost:8081${images[0]}`
-      : "https://images.unsplash.com/photo-1587135941948-670b381f08ce";
 
   // Crowd status from place data
   const status = place.crowdStatus || "Moderate";
@@ -40,9 +30,7 @@ const PlaceCard = ({ place }) => {
         <img
           src={image}
           alt={place.name}
-          onError={(e) => {
-            e.target.src = "https://images.unsplash.com/photo-1587135941948-670b381f08ce";
-          }}
+          onError={(e) => handleImageError(e, place.name)}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />

@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { getPlaceDetails } from "../services/api";
+import { getImagesForPlace, handleImageError } from "../services/imageUtils";
 import LiveIntelligence from "../components/LiveIntelligence";
 import VirtualQueue from "../components/VirtualQueue";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,27 +47,46 @@ export default function PlaceDetail() {
 
   // 🔥 SAFE PARSING HELPERS
   const parseJSON = (data, fallback) => {
-    try {
-      return JSON.parse(data);
-    } catch {
-      return fallback;
-    }
-  };
+  try {
 
-  const images = parseJSON(placeDetails?.images, []);
+    if (!data) return fallback;
+
+    // already parsed array
+    if (Array.isArray(data)) {
+      return data;
+    }
+
+    // already parsed object
+    if (typeof data === "object") {
+      return data;
+    }
+
+    // parse stringified JSON
+    return JSON.parse(data);
+
+  } catch (err) {
+    console.error("JSON Parse Error:", err);
+    return fallback;
+  }
+};
+
+  //const images = parseJSON(placeDetails?.images, []);
   const rituals = parseJSON(placeDetails?.rituals, []);
   const timings = parseJSON(placeDetails?.dailyTimings, {});
   const reach = parseJSON(placeDetails?.reachInfo, {});
 
+  // Use centralized image utility for consistent image handling across components
+  const displayImages = getImagesForPlace(placeDetails?.place?.name, placeDetails?.place?.id);
+
   // Auto-advance image carousel
   useEffect(() => {
-    if (images.length > 1) {
+    if (displayImages.length > 1) {
       const timer = setInterval(() => {
-        setImageIndex((prev) => (prev + 1) % images.length);
+        setImageIndex((prev) => (prev + 1) % displayImages.length);
       }, 5000);
       return () => clearInterval(timer);
     }
-  }, [images.length]);
+  }, [displayImages.length]);
 
   // Loading State
   if (isLoading) {
@@ -129,16 +149,10 @@ export default function PlaceDetail() {
               className="absolute inset-0"
             >
               <img
-                src={
-                  images[imageIndex]?.startsWith("http")
-                    ? images[imageIndex]
-                    : `http://localhost:8081${images[imageIndex]}`
-                }
-                onError={(e) => {
-                  e.target.src = "https://images.unsplash.com/photo-1582510003544-4d00b7f74220";
-                }}
-                alt={placeDetails.name}
+                src={displayImages[imageIndex]}
+                alt={placeDetails?.place?.name}
                 className="w-full h-full object-cover"
+                onError={(e) => handleImageError(e, placeDetails?.place?.name)}
               />
             </motion.div>
           </AnimatePresence>
@@ -177,13 +191,13 @@ export default function PlaceDetail() {
             </motion.button>
 
             {/* Image Indicators */}
-            {images.length > 1 && (
+            {displayImages.length > 1 && (
               <motion.div 
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-xl border border-white/20 rounded-xl"
               >
-                {images.map((_, idx) => (
+                {displayImages.map((_, idx) => (
                   <button
                     key={idx}
                     onClick={() => setImageIndex(idx)}
@@ -226,13 +240,13 @@ export default function PlaceDetail() {
             {/* Main Title */}
             <div className="space-y-3">
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-white tracking-tight leading-none">
-                {placeDetails.name}
+                {placeDetails.place?.name}
               </h1>
               
               <div className="flex items-center gap-3 text-white/80">
                 <MapPin className="w-5 h-5 text-[#FF9933]" />
                 <span className="text-lg md:text-xl font-medium">
-                  {placeDetails.city}, {placeDetails.state}
+                  {placeDetails.place?.city}, {placeDetails.place?.state}
                 </span>
               </div>
             </div>
