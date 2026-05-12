@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getPlaces } from "../services/api";
 import Navbar from "../components/Navbar";
-import PlaceCard from "../components/Placecard";
+import PlaceCard from "../components/PlaceCard";
 import { motion } from "framer-motion";
 import { Sparkles, Activity, Clock, ShieldCheck, Search } from "lucide-react";
 
