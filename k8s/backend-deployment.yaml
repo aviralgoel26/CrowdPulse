@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: backend-deployment
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: backend
+
+  template:
+    metadata:
+      labels:
+        app: backend
+
+    spec:
+      containers:
+        - name: backend
+          image: aviralgoel26/crowdpulse-backend:latest
+
+          ports:
+            - containerPort: 8081
+
+          env:
+            - name: SPRING_DATA_REDIS_HOST
+              value: redis-service
+
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:mysql://mysql:3306/crowdpulse
+
+            - name: SPRING_DATASOURCE_USERNAME
+              value: root
+
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: Root@123
