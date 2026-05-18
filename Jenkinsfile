@@ -8,11 +8,7 @@ pipeline {
 
     stages {
 
-        stage('Clone Repository') {
-            steps {
-                git 'https://github.com/aviralgoel26/CrowdPulse.git'
-            }
-        }
+       
 
         stage('Build Backend') {
             steps {
