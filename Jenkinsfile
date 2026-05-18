@@ -2,8 +2,10 @@ pipeline {
     agent any
 
     environment {
+        
         DOCKERHUB_USERNAME = "aviralgoel26"
         DOCKERHUB_CREDS = credentials('dockerhub-creds')
+        KUBECONFIG = 'C:\\ProgramData\\Jenkins\\.kube\\config'
     }
 
     stages {
