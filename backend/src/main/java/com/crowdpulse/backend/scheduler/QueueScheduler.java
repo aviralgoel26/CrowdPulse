@@ -1,6 +1,7 @@
 package com.crowdpulse.backend.scheduler;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -10,11 +11,96 @@ import com.crowdpulse.backend.model.CommunityUpdate;
 import com.crowdpulse.backend.repository.PlaceRepository;
 import com.crowdpulse.backend.repository.QueueMetricsRepository;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 @Component
 public class QueueScheduler {
+
+    public static final long SHADOW_EXPIRY_THRESHOLD_MS = 30L * 60 * 1000; // 30 min
+
+    public static final DefaultRedisScript<Long> FIND_AND_UPDATE_SCRIPT;
+
+    @SuppressWarnings("rawtypes")
+    public static final DefaultRedisScript<List> PROCESS_SHADOW_SCRIPT;
+
+    static {
+        FIND_AND_UPDATE_SCRIPT = new DefaultRedisScript<>(
+            "local list = redis.call('LRANGE', KEYS[1], 0, -1) " +
+            "for i, v in ipairs(list) do " +
+            "  if v == ARGV[1] then " +
+            "    redis.call('LSET', KEYS[1], i - 1, ARGV[2]) " +
+            "    return 1 " +
+            "  end " +
+            "end " +
+            "return 0",
+            Long.class);
+
+        PROCESS_SHADOW_SCRIPT = new DefaultRedisScript<>(
+            "local now = tonumber(ARGV[1]) " +
+            "local threshold = tonumber(ARGV[2]) " +
+            "local placeId = ARGV[3] " +
+            "if now == nil then return redis.error_reply('ERR TSK01: ARGV[1] (now) must be a numeric timestamp') end " +
+            "if threshold == nil then return redis.error_reply('ERR TSK01: ARGV[2] (threshold) must be a numeric duration') end " +
+            "if placeId == nil or placeId == '' then return redis.error_reply('ERR TSK01: ARGV[3] (placeId) must be a non-empty string') end " +
+            "local list = redis.call('LRANGE', KEYS[1], 0, -1) " +
+            "if #list == 0 then return {0, 0} end " +
+            "local retained = {} " +
+            "local removed = 0 " +
+            "local migrated = 0 " +
+            "for _, v in ipairs(list) do " +
+            "  local parts = {} " +
+            "  for part in string.gmatch(v, '[^:]+') do table.insert(parts, part) end " +
+            "  if #parts < 3 then " +
+            "    table.insert(retained, v) " +
+            "  elseif #parts >= 4 and parts[4] == 'SHADOW' then " +
+            "    if #parts >= 5 then " +
+            "      local st = tonumber(parts[5]) " +
+            "      if st == nil then " +
+            "        local fixed = parts[1] .. ':' .. parts[2] .. ':' .. parts[3] .. ':SHADOW:' .. tostring(now) " +
+            "        table.insert(retained, fixed) " +
+            "        migrated = migrated + 1 " +
+            "      elseif (now - st) > threshold then " +
+            "        local hbKey = 'heartbeat:' .. placeId .. ':' .. parts[1] " +
+            "        if redis.call('EXISTS', hbKey) == 1 then " +
+            "          table.insert(retained, v) " +
+            "        else " +
+            "          removed = removed + 1 " +
+            "        end " +
+            "      else " +
+            "        table.insert(retained, v) " +
+            "      end " +
+            "    else " +
+            "      table.insert(retained, v .. ':' .. tostring(now)) " +
+            "      migrated = migrated + 1 " +
+            "    end " +
+            "  else " +
+            "    table.insert(retained, v) " +
+            "  end " +
+            "end " +
+            "if #retained == 0 then " +
+            "  redis.call('DEL', KEYS[1]) " +
+            "  redis.call('DEL', KEYS[2]) " +
+            "  return {removed, migrated} " +
+            "end " +
+            "redis.call('DEL', KEYS[2]) " +
+            "for _, v in ipairs(retained) do " +
+            "  local pr = redis.pcall('RPUSH', KEYS[2], v) " +
+            "  if type(pr) == 'table' and pr.err then " +
+            "    redis.call('DEL', KEYS[2]) " +
+            "    return redis.error_reply('ERR TSK01: RPUSH failed: ' .. tostring(pr.err)) " +
+            "  end " +
+            "end " +
+            "local rr = redis.pcall('RENAME', KEYS[2], KEYS[1]) " +
+            "if type(rr) == 'table' and rr.err then " +
+            "  redis.call('DEL', KEYS[2]) " +
+            "  return redis.error_reply('ERR TSK01: RENAME failed: ' .. tostring(rr.err)) " +
+            "end " +
+            "return {removed, migrated}",
+            List.class);
+    }
 
     private final StringRedisTemplate redisTemplate;
     private final SimpMessagingTemplate messagingTemplate;
@@ -51,45 +137,86 @@ public void processQueue() {
 
         // 2. 🧹 CLEANUP & STATE MANAGEMENT (Heartbeat Logic)
         List<String> currentQueue = redisTemplate.opsForList().range(key, 0, -1);
+        long now = System.currentTimeMillis();
+
         if (currentQueue != null) {
             for (String entry : currentQueue) {
                 String[] parts = entry.split(":");
                 if (parts.length < 3) continue;
 
                 String userId = parts[0];
-                int gSize = Integer.parseInt(parts[1]);
-                long jTime = Long.parseLong(parts[2]);
-                String state = parts.length > 3 ? parts[3] : "ACTIVE";
+                int gSize;
+                long jTime;
+                try {
+                    gSize = Integer.parseInt(parts[1]);
+                    jTime = Long.parseLong(parts[2]);
+                } catch (NumberFormatException e) {
+                    System.err.println("⚠️ [Scheduler] Malformed entry skipped: " + entry);
+                    continue;
+                }
 
-                long now = System.currentTimeMillis();
+                String state = parts.length > 3 ? parts[3] : "ACTIVE";
                 long userAge = now - jTime;
                 
                 // ✅ CRITICAL FIX: Grace period for new users (first 90 seconds)
                 // Don't mark as SHADOW during first 90 seconds of joining
                 // This gives users time to load the app and establish heartbeat
-                if (userAge < 90000) {
+                if (userAge < 90000L) {
                     continue; // Skip state management for new users
                 }
 
                 boolean isAlive = Boolean.TRUE.equals(redisTemplate.hasKey("heartbeat:" + placeId + ":" + userId));
 
                 if (isAlive && !state.equals("ACTIVE")) {
-                    // Re-activate if heartbeat reappears
+                    // Re-activate if heartbeat reappears: strip shadowTimestamp and set to ACTIVE
                     String updated = userId + ":" + gSize + ":" + jTime + ":ACTIVE";
-                    redisTemplate.opsForList().remove(key, 1, entry);
-                    redisTemplate.opsForList().rightPush(key, updated);
+                    Long found = redisTemplate.execute(FIND_AND_UPDATE_SCRIPT,
+                            Collections.singletonList(key), entry, updated);
+                    if (found == null || found == 0L) {
+                        System.out.println("⚠️ [Scheduler] SHADOW→ACTIVE: entry for " + userId
+                                + " not found (removed concurrently). Skipping.");
+                    } else {
+                        System.out.println("✅ [Scheduler] " + userId
+                                + " reactivated in-place for place " + placeId);
+                    }
                 } else if (!isAlive && state.equals("ACTIVE")) {
-                    // Move to SHADOW if heartbeat missing (after grace period)
-                    String updated = userId + ":" + gSize + ":" + jTime + ":SHADOW";
-                    redisTemplate.opsForList().remove(key, 1, entry);
-                    redisTemplate.opsForList().rightPush(key, updated);
-                } else if (!isAlive && state.equals("SHADOW")) {
-                    // Expire if shadow too long
-                    if ((now - jTime) > (30 * 60 * 1000)) {
-                        redisTemplate.opsForList().remove(key, 1, entry);
+                    // Move to SHADOW if heartbeat missing: add shadowTimestamp = now
+                    String updated = userId + ":" + gSize + ":" + jTime + ":SHADOW:" + now;
+                    Long found = redisTemplate.execute(FIND_AND_UPDATE_SCRIPT,
+                            Collections.singletonList(key), entry, updated);
+                    if (found == null || found == 0L) {
+                        System.out.println("⚠️ [Scheduler] ACTIVE→SHADOW: entry for " + userId
+                                + " not found (removed concurrently). Skipping.");
+                    } else {
+                        System.out.println("🌑 [Scheduler] " + userId
+                                + " moved to SHADOW in-place for place " + placeId);
                     }
                 }
+                // Note: SHADOW users with missing heartbeat are processed atomically below by PROCESS_SHADOW_SCRIPT
             }
+        }
+
+        // Atomic shadow expiry and legacy 4-field migration (once per queue key)
+        String tempKey = key + ":temp_rebuild";
+        List<?> shadowResult = redisTemplate.execute(
+                PROCESS_SHADOW_SCRIPT,
+                Arrays.asList(key, tempKey),
+                String.valueOf(now),
+                String.valueOf(SHADOW_EXPIRY_THRESHOLD_MS),
+                String.valueOf(placeId));
+
+        long expiredCount = (shadowResult != null && !shadowResult.isEmpty())
+                ? ((Long) shadowResult.get(0)) : 0L;
+        long migratedCount = (shadowResult != null && shadowResult.size() > 1)
+                ? ((Long) shadowResult.get(1)) : 0L;
+
+        if (expiredCount > 0) {
+            System.out.println("🗑️ [Scheduler] Expired " + expiredCount
+                    + " SHADOW user(s) from place " + placeId);
+        }
+        if (migratedCount > 0) {
+            System.out.println("🔄 [Scheduler] Migrated " + migratedCount
+                    + " legacy SHADOW entry/entries for place " + placeId);
         }
 
         // 3. 🚶 SERVE USERS (VIRTUAL PROGRESSION)
