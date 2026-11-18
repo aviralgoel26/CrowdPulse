@@ -428,8 +428,8 @@ export default function VirtualQueue({ placeId }) {
                 </div>
 
                 <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl">
-                  <p className="text-xs text-slate-400 font-medium">Token is static</p>
-                  <p className="text-xs text-[#FF9933] font-bold">Position fixed</p>
+                  <p className="text-xs text-slate-400 font-medium">Live queue rank</p>
+                  <p className="text-xs text-[#FF9933] font-bold">Updates as the line moves</p>
                 </div>
               </div>
             </motion.div>

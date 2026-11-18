@@ -121,7 +121,7 @@ public class QueueServiceImpl implements QueueService {
     }
 
     // ==============================
-    // 🎟️ JOIN QUEUE
+    // 🎟️ JOIN QUEUE    
     // ==============================
     @Override
     public Map<String, Object> joinQueue(Long placeId, String userId, int groupSize) {
@@ -281,83 +281,75 @@ public class QueueServiceImpl implements QueueService {
         }
 
         // ========================================
-        // STEP 3: APPLY HEURISTIC CORRECTIONS
+        // STEP 3: INDIVIDUAL POSITION & QUEUE STATUS
         // ========================================
+        long position = (long) (userPositionInList + 1);
+
+        // Determine queue status using existing precedence (Place config overridden by CommunityUpdate)
         Place place = getPlaceConfig(placeId);
-        double scalingFactor = (place != null && place.getScalingFactor() != null)
-                ? place.getScalingFactor()
-                : 1.0;
+        String queueStatus = (place != null && place.getQueueStatus() != null)
+                ? place.getQueueStatus()
+                : "ACTIVE";
 
-        int adminOffset = (place != null && place.getAdminOffset() != null)
-                ? place.getAdminOffset()
-                : 0;
-
-        // Get community estimate
         CommunityUpdate update = communityService.getLatestUpdate(placeId);
-        int communityPeople = (update != null && update.getReportedQueueLength() != null)
-                ? update.getReportedQueueLength()
-                : 0;
+        if (update != null && update.getQueueStatus() != null) {
+            queueStatus = update.getQueueStatus();
+        }
 
-        // Use MAX of redis people + community estimate
-        int basePeople = Math.max(peopleAhead, communityPeople);
-
-        // Apply scaling and offset
-        double correctedPeople = (basePeople * scalingFactor) + adminOffset;
-        int virtualPeopleAhead = Math.max((int) Math.ceil(correctedPeople), 0);
-
-        // Position is always one more than people ahead
-        long position = virtualPeopleAhead + 1;
+        boolean isPausedOrClosed = "PAUSED".equalsIgnoreCase(queueStatus) || "CLOSED".equalsIgnoreCase(queueStatus);
+        String effectiveQueueState = isPausedOrClosed ? queueStatus.toUpperCase() : userQueueState;
 
         // ========================================
-        // STEP 4: CALCULATE DYNAMIC THROUGHPUT & ELAPSED TIME CORRECTION
+        // STEP 4: CALCULATE DYNAMIC THROUGHPUT & ETA
         // ========================================
         double throughput = calculateThroughput(placeId);
-        double queueEfficiencyFactor = calculateEfficiencyFactor(virtualPeopleAhead);
-        double effectiveThroughput = throughput * queueEfficiencyFactor;
+        Integer estimatedWaitMinutes = null;
+        String estimatedDarshanTime = null;
+        String statusMessage = null;
 
-        long now = System.currentTimeMillis();
-        double elapsedMinutes = (now - userJoinTime) / (1000.0 * 60.0);
+        if (isPausedOrClosed) {
+            // Queue is paused or closed: do not claim progress or compute false ETA
+            estimatedWaitMinutes = null;
+            estimatedDarshanTime = "Queue " + queueStatus.toUpperCase();
+            statusMessage = "Queue is currently " + queueStatus.toLowerCase();
+        } else if (peopleAhead == 0) {
+            // User is at the front of the queue
+            estimatedWaitMinutes = 0;
+            estimatedDarshanTime = LocalTime.now().toString();
+        } else {
+            // Active queue with people ahead: compute ETA from actual Redis peopleAhead
+            double queueEfficiencyFactor = calculateEfficiencyFactor(peopleAhead);
+            double effectiveThroughput = throughput * queueEfficiencyFactor;
 
-        // People who have already been served (moved forward)
-        int processedPeople = (int) Math.floor(elapsedMinutes * effectiveThroughput);
+            if (effectiveThroughput > 0) {
+                double remainingWaitMinutes = peopleAhead / effectiveThroughput;
+                int waitMinutesRounded = (int) Math.ceil(remainingWaitMinutes);
 
-        // Live people ahead after accounting for processed
-        int livePeopleAhead = Math.max(virtualPeopleAhead - processedPeople, 0);
+                estimatedWaitMinutes = waitMinutesRounded;
+                estimatedDarshanTime = LocalTime.now().plusMinutes(waitMinutesRounded).toString();
+            } else {
+                estimatedWaitMinutes = null;
+                estimatedDarshanTime = null;
+            }
+        }
 
         // ========================================
-        // STEP 5: CALCULATE ETA
+        // STEP 5: RETURN SUCCESS RESPONSE
         // ========================================
-        // livePeopleAhead is individuals, so divide by effective individuals/minute
-        double remainingWaitMinutes = (livePeopleAhead > 0 && effectiveThroughput > 0) 
-                ? (livePeopleAhead / effectiveThroughput) 
-                : 0;
-        int waitMinutesRounded = (int) Math.ceil(remainingWaitMinutes);
+        Map<String, Object> response = new HashMap<>();
+        response.put("position", position);
+        response.put("peopleAhead", peopleAhead);
+        response.put("estimatedWaitMinutes", estimatedWaitMinutes);
+        response.put("estimatedDarshanTime", estimatedDarshanTime);
+        response.put("groupSize", userGroupSize);
+        response.put("isUserInQueue", true);
+        response.put("queueState", effectiveQueueState);
+        response.put("throughput", throughput);
+        if (statusMessage != null) {
+            response.put("message", statusMessage);
+        }
 
-        LocalTime eta = LocalTime.now().plusMinutes(waitMinutesRounded);
-
-        // ========================================
-        // STEP 6: RETURN SUCCESS RESPONSE
-        // ========================================
-        QueueStatusResponse response = new QueueStatusResponse(
-                position,
-                livePeopleAhead,
-                waitMinutesRounded,
-                eta.toString(),
-                userGroupSize,
-                userQueueState,
-                throughput
-        );
-
-        return Map.of(
-                "position", position,
-                "peopleAhead", livePeopleAhead,
-                "estimatedWaitMinutes", waitMinutesRounded,
-                "estimatedDarshanTime", eta.toString(),
-                "groupSize", userGroupSize,
-                "isUserInQueue", true,
-                "queueState", userQueueState,
-                "throughput", throughput
-        );
+        return response;
     }
     // ==============================
     // ⏱️ WAIT TIME CALCULATION (Global Queue View)
