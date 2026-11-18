@@ -1,5 +1,7 @@
 package com.crowdpulse.backend.scheduler;
 
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -13,6 +15,7 @@ import com.crowdpulse.backend.repository.QueueMetricsRepository;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -120,20 +123,90 @@ private final PlaceRepository placeRepository;
         this.placeRepository = placeRepository;
     }
 
-   @Scheduled(fixedRate = 10000) // runs every 10 sec
-public void processQueue() {
-    System.out.println("⏱️ Scheduler running...");
-    Set<String> keys = redisTemplate.keys("queue:place:*");
+    public static final String QUEUE_KEY_PATTERN = "queue:place:*";
+    public static final long SCAN_BATCH_SIZE = 100L;
 
-    if (keys == null || keys.isEmpty()) {
-        System.out.println("No queues found");
-        return;
+    /**
+     * Validates that the key matches the exact queue key format: queue:place:{placeId}
+     * where placeId is a valid positive numeric ID.
+     * Excludes auxiliary/temporary rebuild keys (e.g. queue:place:1:temp_rebuild) and malformed keys.
+     */
+    public static boolean isValidQueueKey(String key) {
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+        String[] parts = key.split(":");
+        if (parts.length != 3) {
+            return false;
+        }
+        if (!"queue".equals(parts[0]) || !"place".equals(parts[1])) {
+            return false;
+        }
+        try {
+            long placeId = Long.parseLong(parts[2]);
+            return placeId > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
-    for (String key : keys) {
-        // 1. Get Place ID from Key
-        String[] keyParts = key.split(":");
-        Long placeId = Long.parseLong(keyParts[2]);
+    /**
+     * Incrementally scans Redis for active place queue keys using SCAN with MATCH queue:place:*
+     * and COUNT 100 hint.
+     * Guaranteed cursor closure via try-with-resources.
+     * Collects keys into a LinkedHashSet to guarantee deduplication and discovery order.
+     * Excludes temporary rebuild keys and non-queue keys.
+     *
+     * @return Set of unique, valid queue keys.
+     * @throws RuntimeException if cursor creation or iteration fails.
+     */
+    public Set<String> scanQueueKeys() {
+        return scanQueueKeys(this.redisTemplate);
+    }
+
+    public static Set<String> scanQueueKeys(StringRedisTemplate redisTemplate) {
+        ScanOptions options = ScanOptions.scanOptions()
+                .match(QUEUE_KEY_PATTERN)
+                .count(SCAN_BATCH_SIZE)
+                .build();
+
+        Set<String> queueKeys = new LinkedHashSet<>();
+
+        try (Cursor<String> cursor = redisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                if (isValidQueueKey(key)) {
+                    queueKeys.add(key);
+                }
+            }
+            return queueKeys;
+        } catch (Exception e) {
+            System.err.println("❌ [Scheduler] Error during Redis SCAN iteration: " + e.getMessage());
+            throw new RuntimeException("Redis SCAN failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Scheduled(fixedRate = 10000) // runs every 10 sec
+    public void processQueue() {
+        System.out.println("⏱️ Scheduler running...");
+        Set<String> keys;
+        try {
+            keys = scanQueueKeys();
+        } catch (Exception e) {
+            System.err.println("❌ [Scheduler] Aborting scheduler tick due to SCAN failure: " + e.getMessage());
+            return;
+        }
+
+        if (keys == null || keys.isEmpty()) {
+            System.out.println("No queues found");
+            return;
+        }
+
+        for (String key : keys) {
+            try {
+                // 1. Get Place ID from Key
+                String[] keyParts = key.split(":");
+                Long placeId = Long.parseLong(keyParts[2]);
 
         // 2. 🧹 CLEANUP & STATE MANAGEMENT (Heartbeat Logic)
         List<String> currentQueue = redisTemplate.opsForList().range(key, 0, -1);
@@ -314,6 +387,9 @@ public void processQueue() {
         } catch (Exception e) {
             System.err.println("⚠️ Failed to broadcast queue update for place " + placeId + ": " + e.getMessage());
         }
+    } catch (Exception e) {
+        System.err.println("❌ [Scheduler] Error processing queue key " + key + ": " + e.getMessage());
     }
+}
 }
 }
